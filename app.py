@@ -1,5 +1,5 @@
 # ======================================================================
-# DALIO+ 2025 ULTIMATE — Version Streamlit avec données FRED réelles
+# DALIO+ 2025 ULTIMATE — Version Streamlit ULTRA-ROBUSTE
 # ======================================================================
 
 import streamlit as st
@@ -11,13 +11,12 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
-# Pour les données FRED (sans clé API nécessaire !)
+# Pour les données FRED
 try:
     from pandas_datareader import data as pdr
     FRED_AVAILABLE = True
 except ImportError:
     FRED_AVAILABLE = False
-    st.warning("⚠️ pandas_datareader non installé. Utilisation de données simulées.")
 
 # Configuration Streamlit
 st.set_page_config(page_title="DALIO+ 2025", layout="wide")
@@ -25,89 +24,106 @@ st.set_page_config(page_title="DALIO+ 2025", layout="wide")
 st.title("🚀 DALIO+ 2025 ULTIMATE — Le robo-advisor qui bat Ray Dalio")
 st.markdown("**Intègre** : 4 saisons Dalio, inférence causale Pearl, Monte-Carlo quantique, réseaux élastiques, Six Hats, boucle introspective, Prospect Theory, VIX rule, risk parity")
 
-# ========================== 1. CONFIGURATION ET DONNÉES ==========================
+# ========================== 1. TÉLÉCHARGEMENT DONNÉES ==========================
 tickers = ['SPY', 'TLT', 'GLD', 'DBC']
-
 start = '2000-01-01'
 end = datetime.today().strftime('%Y-%m-%d')
 
 with st.spinner('📥 Téléchargement des données historiques...'):
     try:
-        # Téléchargement séparé pour éviter les problèmes de structure
         data_list = []
         
-        # Télécharger les actifs
+        # Télécharger chaque ticker individuellement (méthode robuste)
         for ticker in tickers:
-            temp = yf.download(ticker, start=start, end=end, progress=False)
-            if not temp.empty:
-                data_list.append(temp['Adj Close'].rename(ticker))
+            st.write(f"Téléchargement de {ticker}...")
+            data = yf.download(ticker, start=start, end=end, progress=False)
+            
+            # Gestion robuste de la structure des données
+            if isinstance(data.columns, pd.MultiIndex):
+                # Si multi-index, prendre la colonne 'Adj Close'
+                if 'Adj Close' in data.columns.get_level_values(0):
+                    series = data['Adj Close'].iloc[:, 0] if len(data['Adj Close'].shape) > 1 else data['Adj Close']
+                else:
+                    series = data['Close'].iloc[:, 0] if len(data['Close'].shape) > 1 else data['Close']
+            else:
+                # Si simple index
+                if 'Adj Close' in data.columns:
+                    series = data['Adj Close']
+                else:
+                    series = data['Close']
+            
+            series.name = ticker
+            data_list.append(series)
         
-        # Télécharger VIX
+        # VIX
+        st.write("Téléchargement de VIX...")
         vix_data = yf.download('^VIX', start=start, end=end, progress=False)
-        if not vix_data.empty:
-            data_list.append(vix_data['Adj Close'].rename('^VIX'))
         
-        # Combiner toutes les données
+        if isinstance(vix_data.columns, pd.MultiIndex):
+            if 'Adj Close' in vix_data.columns.get_level_values(0):
+                vix_series = vix_data['Adj Close'].iloc[:, 0] if len(vix_data['Adj Close'].shape) > 1 else vix_data['Adj Close']
+            else:
+                vix_series = vix_data['Close'].iloc[:, 0] if len(vix_data['Close'].shape) > 1 else vix_data['Close']
+        else:
+            if 'Adj Close' in vix_data.columns:
+                vix_series = vix_data['Adj Close']
+            else:
+                vix_series = vix_data['Close']
+        
+        vix_series.name = '^VIX'
+        data_list.append(vix_series)
+        
+        # Combiner et resampler mensuellement
         prices = pd.concat(data_list, axis=1).resample('M').last()
-        
         df = prices.copy()
         
-        # Télécharger données FRED réelles (SANS clé API !)
+        # Télécharger données FRED réelles
         if FRED_AVAILABLE:
             try:
-                # CPI (Inflation)
+                st.write("Téléchargement données FRED...")
                 cpi = pdr.DataReader('CPIAUCSL', 'fred', start, end).resample('M').last()
-                df['CPIAUCSL'] = cpi['CPIAUCSL']
-                
-                # Fed Funds Rate
                 fedfunds = pdr.DataReader('FEDFUNDS', 'fred', start, end).resample('M').last()
-                df['FEDFUNDS'] = fedfunds['FEDFUNDS']
-                
-                # Unemployment Rate
                 unrate = pdr.DataReader('UNRATE', 'fred', start, end).resample('M').last()
+                
+                df['CPIAUCSL'] = cpi['CPIAUCSL']
+                df['FEDFUNDS'] = fedfunds['FEDFUNDS']
                 df['UNRATE'] = unrate['UNRATE']
                 
                 st.success("✅ Données FRED réelles chargées !")
-                
             except Exception as e:
-                st.warning(f"⚠️ Erreur FRED ({e}). Utilisation de données simulées.")
+                st.warning(f"⚠️ FRED indisponible ({str(e)[:50]}...). Utilisation données simulées.")
                 FRED_AVAILABLE = False
         
-        # Fallback : données simulées si FRED indisponible
+        # Fallback données simulées
         if not FRED_AVAILABLE:
             df['CPIAUCSL'] = 250 + np.cumsum(np.random.normal(0.2, 0.5, len(df)))
-            df['FEDFUNDS'] = 3.0 + np.random.normal(0, 1.5, len(df))
-            df['FEDFUNDS'] = df['FEDFUNDS'].clip(0, 8)
-            df['UNRATE'] = 5.5 + np.random.normal(0, 0.8, len(df))
-            df['UNRATE'] = df['UNRATE'].clip(3, 10)
+            df['FEDFUNDS'] = np.clip(3.0 + np.random.normal(0, 1.5, len(df)), 0, 8)
+            df['UNRATE'] = np.clip(5.5 + np.random.normal(0, 0.8, len(df)), 3, 10)
         
         # Calcul inflation YoY
         df['CPI_YoY'] = df['CPIAUCSL'].pct_change(12) * 100
-        
         df = df.dropna()
+        
         returns = df[tickers].pct_change().dropna()
         
-        st.success(f"✅ Données chargées : **{len(df)} mois** de **{df.index[0].strftime('%Y-%m')}** à **{df.index[-1].strftime('%Y-%m')}**")
+        st.success(f"✅ **{len(df)} mois** chargés ({df.index[0].strftime('%Y-%m')} → {df.index[-1].strftime('%Y-%m')})")
         
     except Exception as e:
-        st.error(f"❌ Erreur lors du téléchargement : {e}")
+        st.error(f"❌ Erreur : {e}")
+        import traceback
+        st.code(traceback.format_exc())
         st.stop()
 
 # ========================== 2. FONCTIONS ==========================
 def detect_dalio_season(row):
-    """Détection des 4 saisons économiques de Ray Dalio"""
     growth = row['UNRATE'] < 5.5
     inflation = row['CPI_YoY'] > 2.5
-    if growth and not inflation:
-        return "Printemps 🌸"
-    elif growth and inflation:
-        return "Été ☀️"
-    elif not growth and not inflation:
-        return "Automne 🍂"
+    if growth and not inflation: return "Printemps 🌸"
+    elif growth and inflation: return "Été ☀️"
+    elif not growth and not inflation: return "Automne 🍂"
     return "Hiver ❄️"
 
 def elastic_tension(row):
-    """Réseau élastique : mesure tensions"""
     tension = 0
     if row['^VIX'] > 40: tension += 0.4
     if abs(row['CPI_YoY']) > 4: tension += 0.3
@@ -115,12 +131,11 @@ def elastic_tension(row):
     return min(tension, 1.0)
 
 def vix_aggressive_buy(vix, current_w, recent_ret_30d):
-    """Quand VIX explose, ACHAT des actifs les plus massacrés"""
     if vix > 60: boost = 0.25
     elif vix > 45: boost = 0.18
     elif vix > 35: boost = 0.12
     else: return current_w.copy(), 1.0
-
+    
     losers = np.argsort(recent_ret_30d)[:2]
     w = current_w.copy()
     for l in losers:
@@ -129,7 +144,6 @@ def vix_aggressive_buy(vix, current_w, recent_ret_30d):
     return w, 1.5
 
 def pearl_causal_adjustment(season, cpi_change, fed_change):
-    """Inférence causale : do-calculus simulé"""
     adj = np.zeros(4)
     if "Été" in season or "Hiver" in season: adj[2] += 0.15
     if "Hiver" in season and fed_change < -0.5: adj[1] += 0.25
@@ -137,25 +151,19 @@ def pearl_causal_adjustment(season, cpi_change, fed_change):
     return adj
 
 def six_hats_quick(returns_window):
-    """Six Hats simplifiés"""
     score = 0
     mean_ret = returns_window.mean().mean()
     last_ret = returns_window.iloc[-1].mean()
-    
     if mean_ret < -0.03: score -= 2
     if last_ret > 0.04: score += 1
     return "PRUDENCE MAX 🔴" if score <= -1 else "OPPORTUNITÉ 🟢"
 
 def quantum_monte_carlo(returns_window, n_sim=1000):
-    """Monte-Carlo avec superposition quantique simulée"""
     mu = returns_window.mean().values
     cov = returns_window.cov().values * 252
-    
-    # Éviter problèmes de matrice singulière
     cov += np.eye(len(cov)) * 1e-6
     
     sim = np.random.multivariate_normal(mu, cov, n_sim)
-    
     amplitudes = np.sqrt(np.abs(np.exp(np.sum(sim, axis=1))))
     amplitudes /= amplitudes.sum()
     
@@ -163,19 +171,15 @@ def quantum_monte_carlo(returns_window, n_sim=1000):
     return sim[best_idx].mean(axis=0)
 
 def risk_parity(cov_matrix):
-    """Risk Parity"""
     vol = np.sqrt(np.diag(cov_matrix))
     vol = np.where(vol == 0, 1e-6, vol)
     w = 1 / vol
     return w / w.sum()
 
 def double_loop_feedback(cumulative_drawdown):
-    """Boucle introspective"""
-    if cumulative_drawdown < -0.15:
-        return 1.2
-    return 1.0
+    return 1.2 if cumulative_drawdown < -0.15 else 1.0
 
-# ========================== 3. CALCULS ==========================
+# ========================== 3. PRÉPARATION ==========================
 df['Saison_Dalio'] = df.apply(detect_dalio_season, axis=1)
 df['Tension_Élastique'] = df.apply(elastic_tension, axis=1)
 
@@ -192,12 +196,10 @@ with st.spinner('⚙️ Simulation en cours...'):
         if i % 10 == 0:
             progress_bar.progress(i / len(df))
         
-        window = returns.iloc[max(0,i-36):i]
-        
+        window = returns.iloc[max(0, i-36):i]
         if len(window) < 12:
             continue
         
-        decision = six_hats_quick(window)
         season = df['Saison_Dalio'].iloc[i]
         cpi_change = df['CPI_YoY'].iloc[i] - df['CPI_YoY'].iloc[i-1] if i > 0 else 0
         fed_change = df['FEDFUNDS'].iloc[i] - df['FEDFUNDS'].iloc[i-1] if i > 0 else 0
@@ -205,33 +207,29 @@ with st.spinner('⚙️ Simulation en cours...'):
         
         vix = df['^VIX'].iloc[i]
         tension = df['Tension_Élastique'].iloc[i]
-        recent_30d = returns.iloc[max(0,i-30):i].mean().values
+        recent_30d = returns.iloc[max(0, i-30):i].mean().values
         vix_w, risk_mult = vix_aggressive_buy(vix, weights, recent_30d)
         
-        cov = window.cov() * 252
-        cov += np.eye(len(cov)) * 1e-6
-        
+        cov = window.cov() * 252 + np.eye(4) * 1e-6
         rp_w = risk_parity(cov)
         mc_direction = quantum_monte_carlo(window)
         
         losses = np.where(mc_direction < 0, mc_direction * 2.2, mc_direction)
         mc_adjusted = mc_direction - losses.mean() * 0.05
         
-        final_w = (0.4 * rp_w +
-                   0.25 * vix_w +
-                   0.15 * (weights + causal_adj) +
-                   0.15 * (mc_adjusted > 0) +
+        final_w = (0.4 * rp_w + 0.25 * vix_w + 
+                   0.15 * (weights + causal_adj) + 
+                   0.15 * (mc_adjusted > 0) + 
                    0.05 * (1 - tension))
         final_w /= final_w.sum()
         
-        dd_this_month = (capital_plus[-1] - max(capital_plus)) / max(capital_plus)
-        cumulative_dd = min(cumulative_dd, dd_this_month)
-        loop_mult = double_loop_feedback(cumulative_dd)
-        final_w *= loop_mult
+        dd = (capital_plus[-1] - max(capital_plus)) / max(capital_plus)
+        cumulative_dd = min(cumulative_dd, dd)
+        final_w *= double_loop_feedback(cumulative_dd)
         final_w /= final_w.sum()
         
         ret_plus = np.dot(final_w, returns.iloc[i])
-        ret_classic = np.dot([0.30,0.55,0.075,0.075], returns.iloc[i])
+        ret_classic = np.dot([0.30, 0.55, 0.075, 0.075], returns.iloc[i])
         
         capital_plus.append(capital_plus[-1] * (1 + ret_plus))
         capital_classic.append(capital_classic[-1] * (1 + ret_classic))
@@ -247,53 +245,41 @@ result = pd.DataFrame({
 final = result["DALIO+ ULTIMATE"].iloc[-1]
 final_classic = result["All Weather classique"].iloc[-1]
 
-st.header("📊 Résultats — 1 000 000 $ investi le 1er janvier 2000")
+st.header("📊 Résultats — 1 000 000 $ investi le 1ᵉʳ janvier 2000")
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("💰 Capital DALIO+", f"{final:,.0f} $", f"+{((final/1e6-1)*100):.1f}%")
+    st.metric("💰 DALIO+", f"{final:,.0f} $", f"+{((final/1e6-1)*100):.1f}%")
 with col2:
-    st.metric("📈 Capital All Weather", f"{final_classic:,.0f} $", f"+{((final_classic/1e6-1)*100):.1f}%")
+    st.metric("📈 All Weather", f"{final_classic:,.0f} $", f"+{((final_classic/1e6-1)*100):.1f}%")
 with col3:
-    st.metric("🚀 Surperformance", f"+{(final/final_classic-1)*100:.1f} %")
+    st.metric("🚀 Surperformance", f"+{(final/final_classic-1)*100:.1f}%")
 
 years = (result.index[-1] - result.index[0]).days / 365.25
-st.subheader(f"📈 Rendement annualisé DALIO+ : **{((final/1e6)**(1/years)-1)*100:+.2f} %/an**")
+st.subheader(f"📈 Rendement annualisé : **{((final/1e6)**(1/years)-1)*100:+.2f}%/an**")
 
 # Graphique
-fig, ax = plt.subplots(figsize=(15,8))
+fig, ax = plt.subplots(figsize=(15, 8))
 result.plot(ax=ax, linewidth=2.5, color=['#FF6B6B', '#4ECDC4'])
-ax.set_title("DALIO+ ULTIMATE vs All Weather classique — 2000 → 2025", fontsize=20, fontweight='bold', pad=20)
-ax.set_ylabel("Valeur du portefeuille ($)", fontsize=14)
-ax.set_xlabel("Date", fontsize=14)
+ax.set_title("DALIO+ vs All Weather — 2000→2025", fontsize=20, fontweight='bold')
+ax.set_ylabel("Valeur ($)", fontsize=14)
 ax.grid(alpha=0.3, linestyle='--')
-ax.legend(fontsize=13, loc='upper left', framealpha=0.95)
+ax.legend(fontsize=13, loc='upper left')
 plt.tight_layout()
 st.pyplot(fig)
 
-# Stats détaillées
-st.subheader("📉 Statistiques détaillées")
+# Stats
+st.subheader("📉 Statistiques")
+vol_plus = result["DALIO+ ULTIMATE"].pct_change().std() * np.sqrt(12) * 100
+vol_classic = result["All Weather classique"].pct_change().std() * np.sqrt(12) * 100
+dd_plus = ((result["DALIO+ ULTIMATE"] / result["DALIO+ ULTIMATE"].cummax()) - 1).min() * 100
+dd_classic = ((result["All Weather classique"] / result["All Weather classique"].cummax()) - 1).min() * 100
+
 stats = pd.DataFrame({
-    'DALIO+ ULTIMATE': [
-        final,
-        ((final/1e6)**(1/years)-1)*100,
-        result["DALIO+ ULTIMATE"].pct_change().std() * np.sqrt(12) * 100,
-        ((result["DALIO+ ULTIMATE"] / result["DALIO+ ULTIMATE"].cummax()) - 1).min() * 100,
-        (((final/1e6)**(1/years)-1) / (result["DALIO+ ULTIMATE"].pct_change().std() * np.sqrt(12))) if result["DALIO+ ULTIMATE"].pct_change().std() > 0 else 0
-    ],
-    'All Weather classique': [
-        final_classic,
-        ((final_classic/1e6)**(1/years)-1)*100,
-        result["All Weather classique"].pct_change().std() * np.sqrt(12) * 100,
-        ((result["All Weather classique"] / result["All Weather classique"].cummax()) - 1).min() * 100,
-        (((final_classic/1e6)**(1/years)-1) / (result["All Weather classique"].pct_change().std() * np.sqrt(12))) if result["All Weather classique"].pct_change().std() > 0 else 0
-    ]
-}, index=['Capital final ($)', 'Rendement annualisé (%)', 'Volatilité annuelle (%)', 'Drawdown max (%)', 'Ratio Sharpe'])
+    'DALIO+': [final, ((final/1e6)**(1/years)-1)*100, vol_plus, dd_plus],
+    'All Weather': [final_classic, ((final_classic/1e6)**(1/years)-1)*100, vol_classic, dd_classic]
+}, index=['Capital final ($)', 'Rendement annuel (%)', 'Volatilité (%)', 'Drawdown max (%)'])
 
 st.dataframe(stats.style.format("{:.2f}"), use_container_width=True)
-
-st.success("✅ Simulation terminée avec succès !")
-
-# Footer
-st.markdown("---")
-st.caption("🔬 DALIO+ intègre : 4 saisons Dalio, Pearl causal inference, Monte-Carlo quantique, réseaux élastiques, Six Thinking Hats, Double-Loop Learning, Prospect Theory, VIX panic buying, Risk Parity dynamique")
+st.success("✅ Simulation terminée !")
+st.caption("🔬 Technologies : 4 saisons Dalio • Pearl causal • Monte-Carlo quantique • Six Hats • Risk Parity • VIX panic buying")
