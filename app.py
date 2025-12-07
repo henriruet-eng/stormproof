@@ -1,5 +1,5 @@
 # ======================================================================
-# STORMPROOF 2025 — Institutional Robo-Advisor
+# STORMPROOF 2025 — Institutional Bot-Advisor
 # Risk Parity Backtesting vs Ray Dalio's All Weather (since 1996)
 # Professional version for fund managers and investment bankers
 # ======================================================================
@@ -790,7 +790,6 @@ st.markdown(f'<p class="footer-text">{footer_data}</p>', unsafe_allow_html=True)
 st.markdown('<p class="methodology-text">📋 Proprietary methodology (Dalio 4 Seasons • Pearl Causal Inference • Quantum Monte-Carlo • Elastic Networks • Six Thinking Hats • Double-Loop Learning • Prospect Theory • VIX Panic Buying • Dynamic Risk Parity) — Request full documentation for institutional due diligence</p>', unsafe_allow_html=True)
 
 st.markdown('<p class="footer-contact">Contact: henri8@gmail.com • +33 6 63 54 7000</p>', unsafe_allow_html=True)
-```
 
 ---
 
