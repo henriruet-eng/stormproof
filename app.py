@@ -1,5 +1,5 @@
 # ======================================================================
-# STORMPROOF 2025 — Institutional Bot-Advisor
+# STORMPROOF 2025 — Institutional Bot Advisor
 # Risk Parity Backtesting vs Ray Dalio's All Weather (since 1996)
 # Professional version for fund managers and investment bankers
 # ======================================================================
@@ -23,7 +23,7 @@ except ImportError:
 
 # ========================== STREAMLIT CONFIG ==========================
 st.set_page_config(
-    page_title="STORMPROOF - Institutional Robo-Advisor",
+    page_title="STORMPROOF - Institutional Bot Advisor",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -32,7 +32,6 @@ st.set_page_config(
 # Premium Dark Mode CSS for institutional clients
 st.markdown("""
 <style>
-    /* Global dark mode */
     .stApp {
         background-color: #0a0a0f;
         color: #e0e0e0;
@@ -57,7 +56,6 @@ st.markdown("""
         font-weight: 400;
     }
     
-    /* Dark sidebar */
     [data-testid="stSidebar"] {
         background-color: #0d0d12;
         border-right: 1px solid #1a1a2e;
@@ -67,7 +65,6 @@ st.markdown("""
         color: #c0c0c0;
     }
     
-    /* Metrics styling */
     [data-testid="stMetricValue"] {
         font-size: 1.8rem;
         font-weight: 600;
@@ -78,7 +75,6 @@ st.markdown("""
         font-size: 1rem;
     }
     
-    /* Buttons */
     .stButton>button {
         width: 100%;
         background: linear-gradient(135deg, #4a90d9 0%, #667eea 100%);
@@ -96,13 +92,11 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
     }
     
-    /* DataFrames */
     .stDataFrame {
         background-color: #12121a;
         border-radius: 8px;
     }
     
-    /* Footer styles */
     .footer-text {
         text-align: center;
         color: #606070;
@@ -127,11 +121,9 @@ st.markdown("""
         padding: 1rem 0;
     }
     
-    /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Info boxes */
     .stAlert {
         background-color: #12121a;
         border: 1px solid #1a1a2e;
@@ -141,6 +133,8 @@ st.markdown("""
 
 # ========================== HISTORICAL MARKET CRISES ==========================
 MARKET_CRISES = [
+    {"name": "Asian Crisis", "start": "1997-07-01", "end": "1998-01-01", "duration": "6 months"},
+    {"name": "LTCM/Russia", "start": "1998-08-01", "end": "1998-11-01", "duration": "3 months"},
     {"name": "Dot-com Bubble", "start": "2000-03-01", "end": "2002-10-01", "duration": "31 months"},
     {"name": "9/11 Attacks", "start": "2001-09-01", "end": "2001-10-15", "duration": "6 weeks"},
     {"name": "Subprime Crisis", "start": "2007-10-01", "end": "2009-03-01", "duration": "17 months"},
@@ -155,7 +149,6 @@ MARKET_CRISES = [
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def download_yahoo_data(ticker, start_date, end_date):
-    """Download data from Yahoo Finance API"""
     try:
         data = yf.download(ticker, start=start_date, end=end_date, progress=False, timeout=30)
         if data.empty:
@@ -176,7 +169,6 @@ def download_yahoo_data(ticker, start_date, end_date):
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def download_fred_series(series_id, start_date, end_date):
-    """Download data from FRED (Federal Reserve Economic Data)"""
     try:
         data = pdr.DataReader(series_id, 'fred', start_date, end_date)
         return data
@@ -186,24 +178,13 @@ def download_fred_series(series_id, start_date, end_date):
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def get_historical_data(start_year, end_year):
-    """
-    Get historical data using ETFs when available, proxies for earlier periods.
-    
-    Data sources:
-    - Equities: SPY (1993+) or ^GSPC (S&P 500 Index)
-    - Bonds: TLT (2002+) or calculated from FRED Treasury yields
-    - Gold: GLD (2004+) or GC=F (Gold Futures) or FRED gold prices
-    - Commodities: DBC (2006+) or ^GSCI (S&P GSCI) or simulated from components
-    - VIX: ^VIX (1990+)
-    - Macro: FRED (CPI, Fed Funds, Unemployment)
-    """
     start_date = f'{start_year}-01-01'
     end_date = f'{end_year}-12-31'
     
     data_sources = {}
     series_list = []
     
-    # ===== EQUITIES =====
+    # EQUITIES - SPY (1993+) or S&P 500 Index
     spy_data = download_yahoo_data('SPY', start_date, end_date)
     if spy_data is not None and len(spy_data) > 0:
         spy_data.name = 'SPY'
@@ -216,7 +197,7 @@ def get_historical_data(start_year, end_year):
             series_list.append(gspc_data)
             data_sources['SPY'] = 'Yahoo Finance (S&P 500 Index proxy)'
     
-    # ===== LONG-TERM BONDS =====
+    # LONG-TERM BONDS - TLT (2002+) or IEF
     tlt_data = download_yahoo_data('TLT', start_date, end_date)
     if tlt_data is not None and len(tlt_data) > 0:
         tlt_data.name = 'TLT'
@@ -224,14 +205,12 @@ def get_historical_data(start_year, end_year):
         data_sources['TLT'] = 'Yahoo Finance (TLT ETF)'
     else:
         ief_data = download_yahoo_data('IEF', start_date, end_date)
-        if ief_data is not None:
+        if ief_data is not None and len(ief_data) > 0:
             ief_data.name = 'TLT'
             series_list.append(ief_data)
             data_sources['TLT'] = 'Yahoo Finance (IEF proxy)'
-        else:
-            data_sources['TLT'] = 'Simulated from interest rates'
     
-    # ===== GOLD =====
+    # GOLD - GLD (2004+) or Gold Futures
     gld_data = download_yahoo_data('GLD', start_date, end_date)
     if gld_data is not None and len(gld_data) > 0:
         gld_data.name = 'GLD'
@@ -239,31 +218,25 @@ def get_historical_data(start_year, end_year):
         data_sources['GLD'] = 'Yahoo Finance (GLD ETF)'
     else:
         gc_data = download_yahoo_data('GC=F', start_date, end_date)
-        if gc_data is not None:
+        if gc_data is not None and len(gc_data) > 0:
             gc_data.name = 'GLD'
             series_list.append(gc_data)
             data_sources['GLD'] = 'Yahoo Finance (Gold Futures proxy)'
     
-    # ===== COMMODITIES =====
+    # COMMODITIES - DBC (2006+) or GSG
     dbc_data = download_yahoo_data('DBC', start_date, end_date)
     if dbc_data is not None and len(dbc_data) > 0:
         dbc_data.name = 'DBC'
         series_list.append(dbc_data)
         data_sources['DBC'] = 'Yahoo Finance (DBC ETF)'
     else:
-        gsci_data = download_yahoo_data('^SPGSCI', start_date, end_date)
-        if gsci_data is not None:
-            gsci_data.name = 'DBC'
-            series_list.append(gsci_data)
-            data_sources['DBC'] = 'Yahoo Finance (S&P GSCI proxy)'
-        else:
-            gsg_data = download_yahoo_data('GSG', start_date, end_date)
-            if gsg_data is not None:
-                gsg_data.name = 'DBC'
-                series_list.append(gsg_data)
-                data_sources['DBC'] = 'Yahoo Finance (GSG proxy)'
+        gsg_data = download_yahoo_data('GSG', start_date, end_date)
+        if gsg_data is not None and len(gsg_data) > 0:
+            gsg_data.name = 'DBC'
+            series_list.append(gsg_data)
+            data_sources['DBC'] = 'Yahoo Finance (GSG proxy)'
     
-    # ===== VIX =====
+    # VIX
     vix_data = download_yahoo_data('^VIX', start_date, end_date)
     if vix_data is not None:
         vix_data.name = '^VIX'
@@ -275,7 +248,6 @@ def get_historical_data(start_year, end_year):
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def get_fred_macro_data(start_date, end_date):
-    """Get macroeconomic data from FRED"""
     macro_data = {}
     sources = {}
     
@@ -306,7 +278,6 @@ def get_fred_macro_data(start_date, end_date):
 # ========================== STRATEGY FUNCTIONS ==========================
 
 def detect_dalio_season(row):
-    """Detect economic season per Ray Dalio's framework"""
     growth = row['UNRATE'] < 5.5
     inflation = row['CPI_YoY'] > 2.5
     if growth and not inflation:
@@ -319,7 +290,6 @@ def detect_dalio_season(row):
 
 
 def elastic_tension(row):
-    """Calculate market elastic tension"""
     tension = 0
     if row['^VIX'] > 40:
         tension += 0.4
@@ -331,7 +301,6 @@ def elastic_tension(row):
 
 
 def vix_panic_buy(vix, current_w, recent_returns):
-    """Aggressive buying during VIX spikes (mean reversion)"""
     if vix > 60:
         boost = 0.25
     elif vix > 45:
@@ -350,7 +319,6 @@ def vix_panic_buy(vix, current_w, recent_returns):
 
 
 def causal_adjustment(season, cpi_change, fed_change):
-    """Causal inference adjustments based on macro regime"""
     adj = np.zeros(4)
     if "Summer" in season or "Winter" in season:
         adj[2] += 0.15
@@ -362,7 +330,6 @@ def causal_adjustment(season, cpi_change, fed_change):
 
 
 def quantum_monte_carlo(returns_window, n_sim=1000):
-    """Monte-Carlo optimization with quantum-inspired selection"""
     mu = returns_window.mean().values
     cov = returns_window.cov().values * 252
     cov += np.eye(len(cov)) * 1e-6
@@ -387,20 +354,18 @@ def quantum_monte_carlo(returns_window, n_sim=1000):
 
 
 def risk_parity(cov_matrix):
-    """Dynamic Risk Parity allocation"""
     vol = np.sqrt(np.maximum(np.diag(cov_matrix), 1e-8))
     w = 1 / vol
     return w / w.sum()
 
 
 def double_loop_feedback(cumulative_drawdown):
-    """Introspective feedback loop for risk adjustment"""
     return 1.2 if cumulative_drawdown < -0.15 else 1.0
 
 
 # ========================== HEADER ==========================
 st.markdown('<h1 class="main-header">⚡ STORMPROOF</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Institutional Robo-Advisor • Risk Parity vs All Weather Backtesting</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Institutional Bot Advisor • Risk Parity vs All Weather Backtesting</p>', unsafe_allow_html=True)
 
 # ========================== SIDEBAR ==========================
 with st.sidebar:
@@ -491,6 +456,7 @@ with st.spinner('Loading market data...'):
         
         if len(series_list) < 4:
             st.error(f"❌ Insufficient data: only {len(series_list)} assets loaded. Need 4.")
+            st.info("Note: TLT available from 2002, GLD from 2004, DBC from 2006. Try starting from 2007 for complete data.")
             st.stop()
         
         for asset, source in data_sources.items():
@@ -499,10 +465,11 @@ with st.spinner('Loading market data...'):
         prices = pd.concat(series_list, axis=1).resample('M').last()
         df = prices.copy()
         
-        for ticker in tickers + ['^VIX']:
-            if ticker not in df.columns:
-                st.error(f"❌ Missing data for {ticker}")
-                st.stop()
+        missing_tickers = [t for t in tickers + ['^VIX'] if t not in df.columns]
+        if missing_tickers:
+            st.error(f"❌ Missing data for: {', '.join(missing_tickers)}")
+            st.info("Some ETFs did not exist before 2002-2006. Try a more recent start date.")
+            st.stop()
         
         fred_loaded = False
         if FRED_AVAILABLE:
@@ -790,6 +757,3 @@ st.markdown(f'<p class="footer-text">{footer_data}</p>', unsafe_allow_html=True)
 st.markdown('<p class="methodology-text">📋 Proprietary methodology (Dalio 4 Seasons • Pearl Causal Inference • Quantum Monte-Carlo • Elastic Networks • Six Thinking Hats • Double-Loop Learning • Prospect Theory • VIX Panic Buying • Dynamic Risk Parity) — Request full documentation for institutional due diligence</p>', unsafe_allow_html=True)
 
 st.markdown('<p class="footer-contact">Contact: henri8@gmail.com • +33 6 63 54 7000</p>', unsafe_allow_html=True)
-
-
-
