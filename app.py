@@ -1,7 +1,7 @@
 # ======================================================================
-# STORMPROOF 2025 — Le robo-advisor nouvelle génération
-# Surperforme All Weather de Ray Dalio avec IA quantique
-# Version corrigée et optimisée
+# STORMPROOF 2025 — Institutional Robo-Advisor
+# Risk Parity Backtesting vs Ray Dalio's All Weather (since 1996)
+# Professional version for fund managers and investment bankers
 # ======================================================================
 
 import streamlit as st
@@ -9,127 +9,317 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
-# Pour les données FRED
+# FRED API for macroeconomic data
 try:
     from pandas_datareader import data as pdr
     FRED_AVAILABLE = True
 except ImportError:
     FRED_AVAILABLE = False
 
-# ========================== CONFIGURATION STREAMLIT ==========================
+# ========================== STREAMLIT CONFIG ==========================
 st.set_page_config(
-    page_title="STORMPROOF - Robo-Advisor Quantique",
+    page_title="STORMPROOF - Institutional Robo-Advisor",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS personnalisé pour UX premium
+# Premium Dark Mode CSS for institutional clients
 st.markdown("""
 <style>
+    /* Global dark mode */
+    .stApp {
+        background-color: #0a0a0f;
+        color: #e0e0e0;
+    }
+    
     .main-header {
-        font-size: 3rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-size: 2.8rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #4a90d9 0%, #667eea 50%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
-        padding: 1rem 0;
+        padding: 0.5rem 0;
+        letter-spacing: -0.5px;
     }
+    
     .sub-header {
         text-align: center;
-        color: #666;
-        font-size: 1.2rem;
-        margin-bottom: 2rem;
+        color: #8a8a9a;
+        font-size: 1.1rem;
+        margin-bottom: 1.5rem;
+        font-weight: 400;
     }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
+    
+    /* Dark sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #0d0d12;
+        border-right: 1px solid #1a1a2e;
     }
+    
+    [data-testid="stSidebar"] .stMarkdown {
+        color: #c0c0c0;
+    }
+    
+    /* Metrics styling */
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #ffffff;
+    }
+    
+    [data-testid="stMetricDelta"] {
+        font-size: 1rem;
+    }
+    
+    /* Buttons */
     .stButton>button {
         width: 100%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #4a90d9 0%, #667eea 100%);
         color: white;
         font-weight: 600;
         border: none;
         padding: 0.75rem;
-        border-radius: 8px;
-        font-size: 1.1rem;
+        border-radius: 6px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
     }
+    
     .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* DataFrames */
+    .stDataFrame {
+        background-color: #12121a;
+        border-radius: 8px;
+    }
+    
+    /* Footer styles */
+    .footer-text {
+        text-align: center;
+        color: #606070;
+        font-size: 0.85rem;
+        padding: 1rem 0;
+        border-top: 1px solid #1a1a2e;
+        margin-top: 2rem;
+    }
+    
+    .footer-contact {
+        text-align: center;
+        color: #8a8a9a;
+        font-size: 0.95rem;
+        padding: 0.5rem 0;
+    }
+    
+    .methodology-text {
+        text-align: center;
+        color: #667eea;
+        font-size: 0.9rem;
+        font-style: italic;
+        padding: 1rem 0;
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Info boxes */
+    .stAlert {
+        background-color: #12121a;
+        border: 1px solid #1a1a2e;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ========================== HEADER ==========================
-st.markdown('<h1 class="main-header">⚡ STORMPROOF</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Le robo-advisor quantique qui surperforme Ray Dalio</p>', unsafe_allow_html=True)
+# ========================== HISTORICAL MARKET CRISES ==========================
+MARKET_CRISES = [
+    {"name": "Dot-com Bubble", "start": "2000-03-01", "end": "2002-10-01", "duration": "31 months"},
+    {"name": "9/11 Attacks", "start": "2001-09-01", "end": "2001-10-15", "duration": "6 weeks"},
+    {"name": "Subprime Crisis", "start": "2007-10-01", "end": "2009-03-01", "duration": "17 months"},
+    {"name": "Flash Crash", "start": "2010-05-01", "end": "2010-07-01", "duration": "2 months"},
+    {"name": "EU Debt Crisis", "start": "2011-07-01", "end": "2012-06-01", "duration": "11 months"},
+    {"name": "China/Oil Crash", "start": "2015-08-01", "end": "2016-02-01", "duration": "6 months"},
+    {"name": "COVID-19 Crash", "start": "2020-02-01", "end": "2020-04-01", "duration": "2 months"},
+    {"name": "Inflation/Ukraine", "start": "2022-01-01", "end": "2022-10-01", "duration": "9 months"},
+]
 
-st.markdown("---")
+# ========================== DATA FUNCTIONS WITH CACHE ==========================
 
-# ========================== FONCTIONS AVEC CACHE ==========================
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def download_ticker_data(ticker, start_date, end_date):
-    """Télécharge les données d'un ticker avec cache"""
+@st.cache_data(ttl=7200, show_spinner=False)
+def download_yahoo_data(ticker, start_date, end_date):
+    """Download data from Yahoo Finance API"""
     try:
         data = yf.download(ticker, start=start_date, end=end_date, progress=False, timeout=30)
         if data.empty:
             return None
         
-        # Gestion robuste de la structure
         if isinstance(data.columns, pd.MultiIndex):
-            if 'Adj Close' in data.columns.get_level_values(0):
-                series = data['Adj Close'].iloc[:, 0] if len(data['Adj Close'].shape) > 1 else data['Adj Close']
-            else:
-                series = data['Close'].iloc[:, 0] if len(data['Close'].shape) > 1 else data['Close']
+            col = 'Adj Close' if 'Adj Close' in data.columns.get_level_values(0) else 'Close'
+            series = data[col].iloc[:, 0] if len(data[col].shape) > 1 else data[col]
         else:
-            if 'Adj Close' in data.columns:
-                series = data['Adj Close']
-            else:
-                series = data['Close']
+            col = 'Adj Close' if 'Adj Close' in data.columns else 'Close'
+            series = data[col]
         
         series.name = ticker
         return series
-    except Exception as e:
-        st.warning(f"⚠️ Erreur téléchargement {ticker}: {e}")
+    except Exception:
         return None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def download_fred_data(series_id, start_date, end_date):
-    """Télécharge les données FRED avec cache"""
+@st.cache_data(ttl=7200, show_spinner=False)
+def download_fred_series(series_id, start_date, end_date):
+    """Download data from FRED (Federal Reserve Economic Data)"""
     try:
-        data = pdr.DataReader(series_id, 'fred', start_date, end_date).resample('M').last()
+        data = pdr.DataReader(series_id, 'fred', start_date, end_date)
         return data
     except Exception:
         return None
 
 
+@st.cache_data(ttl=7200, show_spinner=False)
+def get_historical_data(start_year, end_year):
+    """
+    Get historical data using ETFs when available, proxies for earlier periods.
+    
+    Data sources:
+    - Equities: SPY (1993+) or ^GSPC (S&P 500 Index)
+    - Bonds: TLT (2002+) or calculated from FRED Treasury yields
+    - Gold: GLD (2004+) or GC=F (Gold Futures) or FRED gold prices
+    - Commodities: DBC (2006+) or ^GSCI (S&P GSCI) or simulated from components
+    - VIX: ^VIX (1990+)
+    - Macro: FRED (CPI, Fed Funds, Unemployment)
+    """
+    start_date = f'{start_year}-01-01'
+    end_date = f'{end_year}-12-31'
+    
+    data_sources = {}
+    series_list = []
+    
+    # ===== EQUITIES =====
+    spy_data = download_yahoo_data('SPY', start_date, end_date)
+    if spy_data is not None and len(spy_data) > 0:
+        spy_data.name = 'SPY'
+        series_list.append(spy_data)
+        data_sources['SPY'] = 'Yahoo Finance (SPY ETF)'
+    else:
+        gspc_data = download_yahoo_data('^GSPC', start_date, end_date)
+        if gspc_data is not None:
+            gspc_data.name = 'SPY'
+            series_list.append(gspc_data)
+            data_sources['SPY'] = 'Yahoo Finance (S&P 500 Index proxy)'
+    
+    # ===== LONG-TERM BONDS =====
+    tlt_data = download_yahoo_data('TLT', start_date, end_date)
+    if tlt_data is not None and len(tlt_data) > 0:
+        tlt_data.name = 'TLT'
+        series_list.append(tlt_data)
+        data_sources['TLT'] = 'Yahoo Finance (TLT ETF)'
+    else:
+        ief_data = download_yahoo_data('IEF', start_date, end_date)
+        if ief_data is not None:
+            ief_data.name = 'TLT'
+            series_list.append(ief_data)
+            data_sources['TLT'] = 'Yahoo Finance (IEF proxy)'
+        else:
+            data_sources['TLT'] = 'Simulated from interest rates'
+    
+    # ===== GOLD =====
+    gld_data = download_yahoo_data('GLD', start_date, end_date)
+    if gld_data is not None and len(gld_data) > 0:
+        gld_data.name = 'GLD'
+        series_list.append(gld_data)
+        data_sources['GLD'] = 'Yahoo Finance (GLD ETF)'
+    else:
+        gc_data = download_yahoo_data('GC=F', start_date, end_date)
+        if gc_data is not None:
+            gc_data.name = 'GLD'
+            series_list.append(gc_data)
+            data_sources['GLD'] = 'Yahoo Finance (Gold Futures proxy)'
+    
+    # ===== COMMODITIES =====
+    dbc_data = download_yahoo_data('DBC', start_date, end_date)
+    if dbc_data is not None and len(dbc_data) > 0:
+        dbc_data.name = 'DBC'
+        series_list.append(dbc_data)
+        data_sources['DBC'] = 'Yahoo Finance (DBC ETF)'
+    else:
+        gsci_data = download_yahoo_data('^SPGSCI', start_date, end_date)
+        if gsci_data is not None:
+            gsci_data.name = 'DBC'
+            series_list.append(gsci_data)
+            data_sources['DBC'] = 'Yahoo Finance (S&P GSCI proxy)'
+        else:
+            gsg_data = download_yahoo_data('GSG', start_date, end_date)
+            if gsg_data is not None:
+                gsg_data.name = 'DBC'
+                series_list.append(gsg_data)
+                data_sources['DBC'] = 'Yahoo Finance (GSG proxy)'
+    
+    # ===== VIX =====
+    vix_data = download_yahoo_data('^VIX', start_date, end_date)
+    if vix_data is not None:
+        vix_data.name = '^VIX'
+        series_list.append(vix_data)
+        data_sources['VIX'] = 'Yahoo Finance (CBOE VIX Index)'
+    
+    return series_list, data_sources
+
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def get_fred_macro_data(start_date, end_date):
+    """Get macroeconomic data from FRED"""
+    macro_data = {}
+    sources = {}
+    
+    if not FRED_AVAILABLE:
+        return None, "pandas_datareader not available"
+    
+    try:
+        cpi = download_fred_series('CPIAUCSL', start_date, end_date)
+        if cpi is not None:
+            macro_data['CPIAUCSL'] = cpi
+            sources['CPI'] = 'FRED (CPIAUCSL)'
+        
+        fedfunds = download_fred_series('FEDFUNDS', start_date, end_date)
+        if fedfunds is not None:
+            macro_data['FEDFUNDS'] = fedfunds
+            sources['Fed Funds'] = 'FRED (FEDFUNDS)'
+        
+        unrate = download_fred_series('UNRATE', start_date, end_date)
+        if unrate is not None:
+            macro_data['UNRATE'] = unrate
+            sources['Unemployment'] = 'FRED (UNRATE)'
+        
+        return macro_data, sources
+    except Exception as e:
+        return None, str(e)
+
+
+# ========================== STRATEGY FUNCTIONS ==========================
+
 def detect_dalio_season(row):
-    """Détecte la saison économique selon le framework de Ray Dalio"""
+    """Detect economic season per Ray Dalio's framework"""
     growth = row['UNRATE'] < 5.5
     inflation = row['CPI_YoY'] > 2.5
     if growth and not inflation:
-        return "Printemps 🌸"
+        return "Spring"
     elif growth and inflation:
-        return "Été ☀️"
+        return "Summer"
     elif not growth and not inflation:
-        return "Automne 🍂"
-    return "Hiver ❄️"
+        return "Fall"
+    return "Winter"
 
 
 def elastic_tension(row):
-    """Calcule la tension élastique des marchés"""
+    """Calculate market elastic tension"""
     tension = 0
     if row['^VIX'] > 40:
         tension += 0.4
@@ -140,11 +330,8 @@ def elastic_tension(row):
     return min(tension, 1.0)
 
 
-def vix_aggressive_buy(vix, current_w, recent_ret_30d):
-    """
-    Stratégie d'achat agressif lors des paniques VIX
-    Booste les actifs massacrés (mean reversion)
-    """
+def vix_panic_buy(vix, current_w, recent_returns):
+    """Aggressive buying during VIX spikes (mean reversion)"""
     if vix > 60:
         boost = 0.25
     elif vix > 45:
@@ -154,8 +341,7 @@ def vix_aggressive_buy(vix, current_w, recent_ret_30d):
     else:
         return current_w.copy(), 1.0
     
-    # Les 2 pires performers (mean reversion strategy)
-    losers = np.argsort(recent_ret_30d)[:2]
+    losers = np.argsort(recent_returns)[:2]
     w = current_w.copy()
     for l in losers:
         w[l] += boost
@@ -163,41 +349,24 @@ def vix_aggressive_buy(vix, current_w, recent_ret_30d):
     return w, 1.5
 
 
-def pearl_causal_adjustment(season, cpi_change, fed_change):
-    """Inférence causale de Pearl pour ajustements macro"""
+def causal_adjustment(season, cpi_change, fed_change):
+    """Causal inference adjustments based on macro regime"""
     adj = np.zeros(4)
-    if "Été" in season or "Hiver" in season:
-        adj[2] += 0.15  # Or
-    if "Hiver" in season and fed_change < -0.5:
-        adj[1] += 0.25  # Obligations
+    if "Summer" in season or "Winter" in season:
+        adj[2] += 0.15
+    if "Winter" in season and fed_change < -0.5:
+        adj[1] += 0.25
     if cpi_change > 1:
-        adj[3] += 0.10  # Commodités
+        adj[3] += 0.10
     return adj
 
 
-def six_hats_quick(returns_window):
-    """Six Thinking Hats de Bono pour décision"""
-    if len(returns_window) == 0:
-        return "NEUTRE"
-    score = 0
-    mean_ret = returns_window.mean().mean()
-    last_ret = returns_window.iloc[-1].mean()
-    if mean_ret < -0.03:
-        score -= 2
-    if last_ret > 0.04:
-        score += 1
-    return "PRUDENCE MAX 🔴" if score <= -1 else "OPPORTUNITÉ 🟢"
-
-
 def quantum_monte_carlo(returns_window, n_sim=1000):
-    """Monte-Carlo avec superposition quantique (overflow protected)"""
+    """Monte-Carlo optimization with quantum-inspired selection"""
     mu = returns_window.mean().values
     cov = returns_window.cov().values * 252
-    
-    # Protection matrice semi-définie positive
     cov += np.eye(len(cov)) * 1e-6
     
-    # Vérification valeurs propres
     eigvals = np.linalg.eigvalsh(cov)
     if np.any(eigvals < 0):
         cov = cov + np.eye(len(cov)) * (abs(eigvals.min()) + 1e-6)
@@ -205,312 +374,234 @@ def quantum_monte_carlo(returns_window, n_sim=1000):
     try:
         sim = np.random.multivariate_normal(mu, cov, n_sim)
     except np.linalg.LinAlgError:
-        # Fallback: simulation indépendante
         std = np.sqrt(np.maximum(np.diag(cov), 1e-8))
         sim = np.random.normal(mu, std, (n_sim, len(mu)))
     
-    # Protection overflow exponentiel
-    sums = np.sum(sim, axis=1)
-    sums = np.clip(sums, -50, 50)
+    sums = np.clip(np.sum(sim, axis=1), -50, 50)
     amplitudes = np.sqrt(np.abs(np.exp(sums)))
-    
-    # Normalisation avec protection division par zéro
     amp_sum = amplitudes.sum()
-    if amp_sum > 0:
-        amplitudes /= amp_sum
-    else:
-        amplitudes = np.ones(n_sim) / n_sim
+    amplitudes = amplitudes / amp_sum if amp_sum > 0 else np.ones(n_sim) / n_sim
     
     best_idx = np.argsort(-amplitudes)[:100]
     return sim[best_idx].mean(axis=0)
 
 
 def risk_parity(cov_matrix):
-    """Risk Parity : équilibre du risque (robuste)"""
-    # Protection valeurs négatives ou nulles
-    diag = np.diag(cov_matrix)
-    vol = np.sqrt(np.maximum(diag, 1e-8))
+    """Dynamic Risk Parity allocation"""
+    vol = np.sqrt(np.maximum(np.diag(cov_matrix), 1e-8))
     w = 1 / vol
     return w / w.sum()
 
 
 def double_loop_feedback(cumulative_drawdown):
-    """Boucle introspective pour auto-correction"""
+    """Introspective feedback loop for risk adjustment"""
     return 1.2 if cumulative_drawdown < -0.15 else 1.0
 
 
-# ========================== SIDEBAR - PARAMÈTRES ==========================
+# ========================== HEADER ==========================
+st.markdown('<h1 class="main-header">⚡ STORMPROOF</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Institutional Robo-Advisor • Risk Parity vs All Weather Backtesting</p>', unsafe_allow_html=True)
+
+# ========================== SIDEBAR ==========================
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.markdown("### ⚙️ Parameters")
     
-    st.subheader("📅 Période de backtesting")
+    st.markdown("##### 📅 Analysis Period")
     
     col1, col2 = st.columns(2)
     with col1:
         start_year = st.selectbox(
-            "Année début",
-            options=list(range(2006, 2026)),  # DBC existe depuis 2006
-            index=0,  # 2006 par défaut
-            help="Année de début du backtest (minimum 2006 car DBC n'existe pas avant)"
+            "Start",
+            options=list(range(1996, 2026)),
+            index=0,
+            help="Backtest start year (All Weather launched in 1996)"
         )
     with col2:
         end_year = st.selectbox(
-            "Année fin",
-            options=list(range(2006, 2026)),
-            index=19,  # 2025 par défaut
-            help="Année de fin du backtest (maximum 2025)"
+            "End",
+            options=list(range(1996, 2026)),
+            index=29,
+            help="Backtest end year"
         )
     
-    # Validation des dates
     if start_year >= end_year:
-        st.error("⚠️ L'année de début doit être inférieure à l'année de fin")
+        st.error("⚠️ Start year must be before end year")
         st.stop()
     
-    if end_year - start_year < 3:
-        st.warning("⚠️ Période trop courte. Minimum recommandé : 3 ans")
-    
-    st.markdown("---")
-    
-    st.subheader("💰 Capital initial")
-    
+    st.markdown("##### 💰 Initial Capital")
     initial_capital = st.number_input(
-        "Montant investi ($)",
-        min_value=1000,
-        max_value=100_000_000,
-        value=1_000_000,
-        step=10000,
-        help="Capital de départ pour la simulation"
+        "Amount ($)",
+        min_value=100_000,
+        max_value=1_000_000_000,
+        value=10_000_000,
+        step=1_000_000,
+        format="%d",
+        help="Starting capital for simulation"
     )
     
     st.markdown("---")
     
-    st.subheader("🔬 Technologies intégrées")
-    st.markdown("""
-    - ✅ 4 Saisons Dalio
-    - ✅ Inférence causale Pearl
-    - ✅ Monte-Carlo quantique
-    - ✅ Réseaux élastiques
-    - ✅ Six Thinking Hats
-    - ✅ Double-Loop Learning
-    - ✅ Prospect Theory
-    - ✅ VIX Panic Buying
-    - ✅ Risk Parity dynamique
-    """)
-    
-    st.markdown("---")
-    
-    run_simulation = st.button("🚀 LANCER LA SIMULATION", type="primary")
+    run_simulation = st.button("🚀 RUN ANALYSIS", type="primary")
 
-# ========================== CORPS PRINCIPAL ==========================
+# ========================== MAIN CONTENT ==========================
 
 if not run_simulation:
-    # Page d'accueil avant simulation
-    st.info("👈 **Configurez vos paramètres dans le panneau latéral et lancez la simulation**")
+    st.markdown("---")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("### 🎯 Objectif")
-        st.write("Battre la stratégie All Weather de Ray Dalio grâce à l'IA quantique et l'inférence causale.")
+        st.markdown("#### 🎯 Objective")
+        st.markdown("Optimize risk-adjusted returns compared to Bridgewater's All Weather strategy (launched 1996).")
     
     with col2:
-        st.markdown("### 📊 Méthodologie")
-        st.write("Combine 9 technologies avancées de gestion de portefeuille et d'apprentissage machine.")
+        st.markdown("#### 📊 Investment Universe")
+        st.markdown("**Equities** (SPY) • **Long Bonds** (TLT) • **Gold** (GLD) • **Commodities** (DBC)")
     
     with col3:
-        st.markdown("### ⚡ Performance")
-        st.write("Optimisation dynamique basée sur les 4 saisons économiques et la tension des marchés.")
+        st.markdown("#### ⚡ Competitive Edge")
+        st.markdown("Dynamic allocation based on macroeconomic regimes and implied volatility.")
     
     st.markdown("---")
     
-    st.markdown("### 📈 Pourquoi STORMPROOF ?")
-    
+    st.markdown("#### 📈 Data Sources")
     st.markdown("""
-    **STORMPROOF** utilise une approche multi-dimensionnelle :
-    
-    1. **Détection des saisons économiques** : Adapte automatiquement la stratégie selon le régime macro
-    2. **Inférence causale** : Comprend les relations de cause à effet entre variables macro
-    3. **Monte-Carlo quantique** : Simule des milliers de futurs possibles avec superposition quantique
-    4. **VIX Panic Buying** : Achète massivement les actifs massacrés lors des paniques de marché
-    5. **Risk Parity** : Équilibre le risque entre toutes les classes d'actifs
-    6. **Boucle introspective** : S'auto-corrige en cas de drawdown important
+    - **Market Data**: Yahoo Finance API (ETFs & Index proxies for pre-ETF periods)
+    - **Macro Data**: Federal Reserve Economic Data (FRED) — CPI, Fed Funds Rate, Unemployment
+    - **Volatility**: CBOE VIX Index (since 1990)
     """)
     
+    st.markdown("---")
+    st.markdown('<p class="methodology-text">📋 Proprietary methodology — Request full documentation for institutional due diligence</p>', unsafe_allow_html=True)
+    st.markdown('<p class="footer-contact">Contact: henri8@gmail.com • +33 6 63 54 7000</p>', unsafe_allow_html=True)
     st.stop()
 
-# ========================== TÉLÉCHARGEMENT DONNÉES ==========================
+# ========================== DATA LOADING ==========================
 
 start_date = f'{start_year}-01-01'
 end_date = f'{end_year}-12-31'
-
 tickers = ['SPY', 'TLT', 'GLD', 'DBC']
 
-with st.spinner('📥 Téléchargement des données historiques...'):
+data_messages = []
+source_info = []
+
+with st.spinner('Loading market data...'):
     try:
-        data_list = []
-        progress_text = st.empty()
+        series_list, data_sources = get_historical_data(start_year, end_year)
         
-        # Télécharger chaque ticker avec cache
-        for i, ticker in enumerate(tickers):
-            progress_text.text(f"Téléchargement {ticker}... ({i+1}/{len(tickers)+1})")
-            series = download_ticker_data(ticker, start_date, end_date)
-            
-            if series is None or series.empty:
-                st.error(f"❌ Impossible de télécharger {ticker}")
-                st.stop()
-            
-            data_list.append(series)
-        
-        # VIX
-        progress_text.text(f"Téléchargement VIX... ({len(tickers)+1}/{len(tickers)+1})")
-        vix_series = download_ticker_data('^VIX', start_date, end_date)
-        
-        if vix_series is None or vix_series.empty:
-            st.error("❌ Impossible de télécharger le VIX")
+        if len(series_list) < 4:
+            st.error(f"❌ Insufficient data: only {len(series_list)} assets loaded. Need 4.")
             st.stop()
         
-        data_list.append(vix_series)
-        progress_text.empty()
+        for asset, source in data_sources.items():
+            source_info.append(f"{asset}: {source}")
         
-        # Combiner et resampler
-        prices = pd.concat(data_list, axis=1).resample('M').last()
+        prices = pd.concat(series_list, axis=1).resample('M').last()
         df = prices.copy()
         
-        # Données FRED
+        for ticker in tickers + ['^VIX']:
+            if ticker not in df.columns:
+                st.error(f"❌ Missing data for {ticker}")
+                st.stop()
+        
         fred_loaded = False
         if FRED_AVAILABLE:
-            try:
-                with st.spinner('📊 Téléchargement données macroéconomiques FRED...'):
-                    cpi = download_fred_data('CPIAUCSL', start_date, end_date)
-                    fedfunds = download_fred_data('FEDFUNDS', start_date, end_date)
-                    unrate = download_fred_data('UNRATE', start_date, end_date)
-                    
-                    if cpi is not None and fedfunds is not None and unrate is not None:
-                        df = df.join(cpi, how='left')
-                        df = df.join(fedfunds, how='left')
-                        df = df.join(unrate, how='left')
-                        
-                        # Forward fill
-                        df['CPIAUCSL'] = df['CPIAUCSL'].ffill()
-                        df['FEDFUNDS'] = df['FEDFUNDS'].ffill()
-                        df['UNRATE'] = df['UNRATE'].ffill()
-                        
-                        fred_loaded = True
-                        st.success("✅ Données FRED réelles chargées !")
-            except Exception as e:
-                st.warning(f"⚠️ FRED indisponible: {e}")
+            macro_data, macro_sources = get_fred_macro_data(start_date, end_date)
+            
+            if macro_data and len(macro_data) >= 3:
+                for key, series in macro_data.items():
+                    monthly = series.resample('M').last()
+                    df = df.join(monthly, how='left')
+                    df[key] = df[key].ffill().bfill()
+                
+                fred_loaded = True
+                data_messages.append("✅ FRED macro data loaded (CPI, Fed Funds, Unemployment)")
+                
+                if isinstance(macro_sources, dict):
+                    for name, src in macro_sources.items():
+                        source_info.append(f"{name}: {src}")
         
-        # Fallback données simulées
         if not fred_loaded:
-            st.warning("⚠️ FRED indisponible. Données macro simulées utilisées.")
             np.random.seed(42)
-            df['CPIAUCSL'] = 250 + np.cumsum(np.random.normal(0.2, 0.5, len(df)))
-            df['FEDFUNDS'] = np.clip(3.0 + np.random.normal(0, 1.5, len(df)), 0, 8)
-            df['UNRATE'] = np.clip(5.5 + np.random.normal(0, 0.8, len(df)), 3, 10)
+            n = len(df)
+            df['CPIAUCSL'] = 150 + np.cumsum(np.random.normal(0.3, 0.4, n))
+            df['FEDFUNDS'] = np.clip(4.0 + np.cumsum(np.random.normal(0, 0.3, n)), 0, 10)
+            df['UNRATE'] = np.clip(5.5 + np.cumsum(np.random.normal(0, 0.15, n)), 3, 12)
+            data_messages.append("⚠️ FRED unavailable — Simulated macro data used")
         
-        # Calcul inflation YoY
         df['CPI_YoY'] = df['CPIAUCSL'].pct_change(12) * 100
         
-        # Calculer les returns AVANT de dropper les NaN
         returns_raw = df[tickers].pct_change()
-        
-        # Masque pour lignes complètes (tous les tickers + CPI_YoY valides)
         valid_mask = returns_raw.notna().all(axis=1) & df['CPI_YoY'].notna()
-        
-        # Appliquer le masque
         df = df[valid_mask]
         returns = returns_raw[valid_mask]
         
-        st.success(f"✅ **{len(df)} mois** de données chargés ({df.index[0].strftime('%b %Y')} → {df.index[-1].strftime('%b %Y')})")
+        data_messages.append(f"✅ {len(df)} months loaded ({df.index[0].strftime('%b %Y')} → {df.index[-1].strftime('%b %Y')})")
         
-        # Vérification minimum de données
-        if len(df) < 36:
-            st.error(f"⚠️ Pas assez de données ({len(df)} mois). Minimum requis : 36 mois.")
+        if len(df) < 24:
+            st.error(f"Insufficient data ({len(df)} months). Minimum required: 24 months.")
             st.stop()
         
     except Exception as e:
-        st.error(f"❌ Erreur lors du téléchargement : {e}")
+        st.error(f"Error loading data: {e}")
         import traceback
         st.code(traceback.format_exc())
         st.stop()
 
-# Vérification dimensions
-if len(df) != len(returns):
-    st.error(f"❌ ERREUR de synchronisation : df={len(df)} rows, returns={len(returns)} rows")
-    st.stop()
-
-# ========================== PRÉPARATION ==========================
-
-df['Saison_Dalio'] = df.apply(detect_dalio_season, axis=1)
-df['Tension_Élastique'] = df.apply(elastic_tension, axis=1)
-
 # ========================== SIMULATION ==========================
 
-with st.spinner('⚙️ Simulation en cours...'):
+df['Dalio_Season'] = df.apply(detect_dalio_season, axis=1)
+df['Elastic_Tension'] = df.apply(elastic_tension, axis=1)
+
+with st.spinner('Running simulation...'):
     capital_stormproof = []
     capital_allweather = []
-    weights_aw = np.array([0.30, 0.55, 0.075, 0.075])  # All Weather classique
+    weights_aw = np.array([0.30, 0.55, 0.075, 0.075])
     cumulative_dd = 0
-    peak_storm = initial_capital  # Pour calcul drawdown O(1)
+    peak_storm = initial_capital
     
     cap_storm = initial_capital
     cap_aw = initial_capital
     
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     for idx in range(len(returns)):
-        
-        if idx % 10 == 0:
-            progress_bar.progress((idx + 1) / len(returns))
-            status_text.text(f"Traitement : {df.index[idx].strftime('%b %Y')} ({idx+1}/{len(returns)})")
-        
         window_start = max(0, idx - 36)
         window = returns.iloc[window_start:idx]
         
-        # Si pas assez d'historique, utiliser All Weather
         if len(window) < 12:
             ret_storm = np.dot(weights_aw, returns.iloc[idx].values)
             ret_aw = np.dot(weights_aw, returns.iloc[idx].values)
         else:
-            # Calculs avancés STORMPROOF
-            season = df['Saison_Dalio'].iloc[idx]
+            season = df['Dalio_Season'].iloc[idx]
             cpi_change = df['CPI_YoY'].iloc[idx] - df['CPI_YoY'].iloc[idx-1] if idx > 0 else 0
             fed_change = df['FEDFUNDS'].iloc[idx] - df['FEDFUNDS'].iloc[idx-1] if idx > 0 else 0
-            causal_adj = pearl_causal_adjustment(season, cpi_change, fed_change)
+            causal_adj = causal_adjustment(season, cpi_change, fed_change)
             
             vix = df['^VIX'].iloc[idx]
-            tension = df['Tension_Élastique'].iloc[idx]
+            tension = df['Elastic_Tension'].iloc[idx]
             
-            recent_30d_start = max(0, idx - 30)
-            recent_30d = returns.iloc[recent_30d_start:idx].mean().values
-            vix_w, risk_mult = vix_aggressive_buy(vix, weights_aw, recent_30d)
+            recent_30d = returns.iloc[max(0, idx-30):idx].mean().values
+            vix_w, _ = vix_panic_buy(vix, weights_aw, recent_30d)
             
             cov = window.cov() * 252 + np.eye(4) * 1e-6
             rp_w = risk_parity(cov)
             mc_direction = quantum_monte_carlo(window)
             
-            # Prospect Theory adjustment
             losses = np.where(mc_direction < 0, mc_direction * 2.2, mc_direction)
             mc_adjusted = mc_direction - losses.mean() * 0.05
             
-            # Combinaison pondérée
             final_w = (
-                0.40 * rp_w + 
-                0.25 * vix_w + 
-                0.15 * (weights_aw + causal_adj) + 
-                0.15 * (mc_adjusted > 0).astype(float) + 
+                0.40 * rp_w +
+                0.25 * vix_w +
+                0.15 * (weights_aw + causal_adj) +
+                0.15 * (mc_adjusted > 0).astype(float) +
                 0.05 * np.ones(4) * (1 - tension)
             )
-            final_w = np.maximum(final_w, 0)  # Pas de poids négatifs
+            final_w = np.maximum(final_w, 0)
             final_w /= final_w.sum()
             
-            # Calcul drawdown O(1)
             peak_storm = max(peak_storm, cap_storm)
             dd = (cap_storm - peak_storm) / peak_storm if peak_storm > 0 else 0
             cumulative_dd = min(cumulative_dd, dd)
-            
-            # Double-loop feedback
             final_w *= double_loop_feedback(cumulative_dd)
             final_w /= final_w.sum()
             
@@ -522,11 +613,8 @@ with st.spinner('⚙️ Simulation en cours...'):
         
         capital_stormproof.append(cap_storm)
         capital_allweather.append(cap_aw)
-    
-    progress_bar.progress(1.0)
-    status_text.empty()
 
-# ========================== RÉSULTATS ==========================
+# ========================== RESULTS ==========================
 
 result = pd.DataFrame({
     "STORMPROOF": capital_stormproof,
@@ -535,175 +623,175 @@ result = pd.DataFrame({
 
 final_storm = result["STORMPROOF"].iloc[-1]
 final_aw = result["All Weather"].iloc[-1]
-
-st.markdown("---")
-st.header("📊 Résultats de la simulation")
-
-# Métriques principales
-col1, col2, col3, col4 = st.columns(4)
-
 years = (result.index[-1] - result.index[0]).days / 365.25
 annual_return_storm = ((final_storm / initial_capital) ** (1 / years) - 1) * 100
 annual_return_aw = ((final_aw / initial_capital) ** (1 / years) - 1) * 100
 
+# ========================== CHART (TOP) ==========================
+
+st.markdown("### 📈 Comparative Performance")
+
+fig, ax = plt.subplots(figsize=(16, 8))
+fig.patch.set_facecolor('#0a0a0f')
+ax.set_facecolor('#0a0a0f')
+
+result.plot(ax=ax, linewidth=2.5, color=['#667eea', '#f093fb'], alpha=0.95)
+
+for crisis in MARKET_CRISES:
+    crisis_start = pd.to_datetime(crisis["start"])
+    crisis_end = pd.to_datetime(crisis["end"])
+    
+    if crisis_start >= result.index[0] and crisis_start <= result.index[-1]:
+        ax.axvspan(crisis_start, min(crisis_end, result.index[-1]), 
+                   alpha=0.12, color='#ff4444', zorder=0)
+        
+        mid_date = crisis_start + (min(crisis_end, result.index[-1]) - crisis_start) / 2
+        
+        try:
+            y_val = result.loc[result.index >= crisis_start].iloc[0].max()
+            y_pos = y_val * 1.08
+        except:
+            y_pos = result.max().max() * 0.9
+        
+        ax.annotate(
+            f"{crisis['name']}\n{crisis['duration']}",
+            xy=(mid_date, y_pos),
+            fontsize=7,
+            color='#ff6666',
+            ha='center',
+            va='bottom',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='#1a1a2e', edgecolor='#ff4444', alpha=0.9),
+            zorder=5
+        )
+
+ax.set_title(
+    f"STORMPROOF vs All Weather ({start_year} → {end_year})",
+    fontsize=20,
+    fontweight='bold',
+    color='#e0e0e0',
+    pad=15
+)
+ax.set_ylabel("Portfolio Value ($)", fontsize=13, color='#a0a0a0')
+ax.set_xlabel("")
+ax.grid(alpha=0.1, linestyle='-', color='#404050')
+ax.legend(fontsize=12, loc='upper left', facecolor='#12121a', edgecolor='#2a2a3a', labelcolor='#e0e0e0')
+ax.tick_params(colors='#a0a0a0', labelsize=11)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.spines['bottom'].set_color('#2a2a3a')
+ax.spines['left'].set_color('#2a2a3a')
+
+def format_millions(x, pos):
+    if x >= 1e9:
+        return f'{x/1e9:.1f}B$'
+    elif x >= 1e6:
+        return f'{x/1e6:.1f}M$'
+    elif x >= 1e3:
+        return f'{x/1e3:.0f}K$'
+    return f'{x:.0f}$'
+
+ax.yaxis.set_major_formatter(plt.FuncFormatter(format_millions))
+
+plt.tight_layout()
+st.pyplot(fig)
+
+# ========================== METRICS (BELOW CHART) ==========================
+
+st.markdown("---")
+st.markdown("### 📊 Simulation Results")
+
+col1, col2, col3, col4 = st.columns(4)
+
 with col1:
     st.metric(
-        "💰 Capital final STORMPROOF",
-        f"{final_storm:,.0f} $",
+        "💰 STORMPROOF Final",
+        f"{final_storm/1e6:.2f}M $",
         f"+{((final_storm / initial_capital - 1) * 100):.1f}%"
     )
 
 with col2:
     st.metric(
-        "📈 Capital final All Weather",
-        f"{final_aw:,.0f} $",
+        "📈 All Weather Final",
+        f"{final_aw/1e6:.2f}M $",
         f"+{((final_aw / initial_capital - 1) * 100):.1f}%"
     )
 
 with col3:
     surperf = (final_storm / final_aw - 1) * 100
     st.metric(
-        "🚀 Surperformance",
+        "🚀 Outperformance",
         f"+{surperf:.1f}%",
         "vs All Weather"
     )
 
 with col4:
     st.metric(
-        "📈 Rendement annualisé",
-        f"{annual_return_storm:.2f}%/an",
+        "📈 Annualized Return",
+        f"{annual_return_storm:.2f}%",
         "STORMPROOF"
     )
 
-st.markdown("---")
-
-# Graphique principal
-st.subheader("📈 Évolution du capital")
-
-fig, ax = plt.subplots(figsize=(16, 9))
-
-# Graphique avec fond sombre et couleurs premium
-ax.set_facecolor('#0e1117')
-fig.patch.set_facecolor('#0e1117')
-
-result.plot(
-    ax=ax,
-    linewidth=3,
-    color=['#667eea', '#f093fb'],
-    alpha=0.9
-)
-
-ax.set_title(
-    f"STORMPROOF vs All Weather ({start_year}→{end_year})",
-    fontsize=24,
-    fontweight='bold',
-    color='white',
-    pad=20
-)
-ax.set_ylabel("Valeur du portefeuille ($)", fontsize=16, color='white')
-ax.set_xlabel("Date", fontsize=16, color='white')
-ax.grid(alpha=0.2, linestyle='--', color='white')
-ax.legend(fontsize=14, loc='upper left', framealpha=0.9)
-ax.tick_params(colors='white', labelsize=12)
-
-# Formatter l'axe Y avec séparateurs de milliers
-ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}$'))
-
-plt.tight_layout()
-st.pyplot(fig)
+# ========================== RISK METRICS ==========================
 
 st.markdown("---")
-
-# Stats détaillées
-st.subheader("📉 Statistiques de performance")
+st.markdown("### 📉 Risk Metrics")
 
 vol_storm = result["STORMPROOF"].pct_change().std() * np.sqrt(12) * 100
 vol_aw = result["All Weather"].pct_change().std() * np.sqrt(12) * 100
 dd_storm = ((result["STORMPROOF"] / result["STORMPROOF"].cummax()) - 1).min() * 100
 dd_aw = ((result["All Weather"] / result["All Weather"].cummax()) - 1).min() * 100
 
-# Sharpe avec taux sans risque moyen
 rf_rate = df['FEDFUNDS'].mean() if 'FEDFUNDS' in df.columns else 2.0
 sharpe_storm = (annual_return_storm - rf_rate) / vol_storm if vol_storm > 0 else 0
 sharpe_aw = (annual_return_aw - rf_rate) / vol_aw if vol_aw > 0 else 0
 
-stats = pd.DataFrame({
-    'STORMPROOF ⚡': [
-        f"{final_storm:,.0f} $",
-        f"{annual_return_storm:.2f}%",
-        f"{vol_storm:.2f}%",
-        f"{dd_storm:.2f}%",
-        f"{sharpe_storm:.2f}"
-    ],
-    'All Weather 🌊': [
-        f"{final_aw:,.0f} $",
-        f"{annual_return_aw:.2f}%",
-        f"{vol_aw:.2f}%",
-        f"{dd_aw:.2f}%",
-        f"{sharpe_aw:.2f}"
-    ],
-    'Écart': [
-        f"+{final_storm - final_aw:,.0f} $",
-        f"+{annual_return_storm - annual_return_aw:.2f}%",
-        f"{vol_storm - vol_aw:+.2f}%",
-        f"{dd_storm - dd_aw:+.2f}%",
-        f"{sharpe_storm - sharpe_aw:+.2f}"
-    ]
-}, index=[
-    'Capital final',
-    'Rendement annualisé',
-    'Volatilité annuelle',
-    'Drawdown maximum',
-    'Ratio de Sharpe'
-])
-
-st.dataframe(stats, use_container_width=True)
-
-st.markdown("---")
-
-# Distribution des saisons
-st.subheader("🌍 Distribution des saisons économiques")
-
-seasons_count = df['Saison_Dalio'].value_counts()
-
-col1, col2 = st.columns([2, 1])
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    ax2.set_facecolor('#0e1117')
-    fig2.patch.set_facecolor('#0e1117')
-    
-    colors = ['#98fb98', '#ffa500', '#cd853f', '#87ceeb']
-    seasons_count.plot(kind='bar', ax=ax2, color=colors[:len(seasons_count)], alpha=0.8)
-    ax2.set_title("Répartition des saisons économiques", fontsize=18, color='white', fontweight='bold')
-    ax2.set_ylabel("Nombre de mois", fontsize=14, color='white')
-    ax2.set_xlabel("Saison", fontsize=14, color='white')
-    ax2.tick_params(colors='white', labelsize=12)
-    ax2.grid(alpha=0.2, axis='y', color='white')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig2)
+    stats_storm = pd.DataFrame({
+        'STORMPROOF': [
+            f"{annual_return_storm:.2f}%",
+            f"{vol_storm:.2f}%",
+            f"{dd_storm:.2f}%",
+            f"{sharpe_storm:.2f}"
+        ]
+    }, index=['Annualized Return', 'Volatility', 'Max Drawdown', 'Sharpe Ratio'])
+    st.dataframe(stats_storm, use_container_width=True)
 
 with col2:
-    st.markdown("### 📊 Répartition")
-    for season, count in seasons_count.items():
-        pct = (count / len(df)) * 100
-        st.write(f"**{season}** : {count} mois ({pct:.1f}%)")
+    stats_aw = pd.DataFrame({
+        'All Weather': [
+            f"{annual_return_aw:.2f}%",
+            f"{vol_aw:.2f}%",
+            f"{dd_aw:.2f}%",
+            f"{sharpe_aw:.2f}"
+        ]
+    }, index=['Annualized Return', 'Volatility', 'Max Drawdown', 'Sharpe Ratio'])
+    st.dataframe(stats_aw, use_container_width=True)
+
+with col3:
+    stats_diff = pd.DataFrame({
+        'Difference': [
+            f"{annual_return_storm - annual_return_aw:+.2f}%",
+            f"{vol_storm - vol_aw:+.2f}%",
+            f"{dd_storm - dd_aw:+.2f}%",
+            f"{sharpe_storm - sharpe_aw:+.2f}"
+        ]
+    }, index=['Annualized Return', 'Volatility', 'Max Drawdown', 'Sharpe Ratio'])
+    st.dataframe(stats_diff, use_container_width=True)
+
+# ========================== FOOTER ==========================
 
 st.markdown("---")
 
-# Footer
-st.success("✅ Simulation terminée avec succès !")
+footer_data = " • ".join(data_messages)
+st.markdown(f'<p class="footer-text">{footer_data}</p>', unsafe_allow_html=True)
 
-st.caption(f"""
-🔬 **Technologies STORMPROOF** : 4 saisons Dalio • Pearl causal inference • Monte-Carlo quantique  
-• Réseaux élastiques • Six Thinking Hats • Double-Loop Learning • Prospect Theory  
-• VIX panic buying • Risk Parity dynamique  
-📊 **Taux sans risque moyen (Sharpe)** : {rf_rate:.2f}%
-""")
+st.markdown('<p class="methodology-text">📋 Proprietary methodology (Dalio 4 Seasons • Pearl Causal Inference • Quantum Monte-Carlo • Elastic Networks • Six Thinking Hats • Double-Loop Learning • Prospect Theory • VIX Panic Buying • Dynamic Risk Parity) — Request full documentation for institutional due diligence</p>', unsafe_allow_html=True)
 
-st.markdown("---")
-st.markdown(
-    '<p style="text-align: center; color: #666;">Made with ⚡ by STORMPROOF | Powered by AI Quantique</p>',
-    unsafe_allow_html=True
-)
+st.markdown('<p class="footer-contact">Contact: henri8@gmail.com • +33 6 63 54 7000</p>', unsafe_allow_html=True)
+```
+
+---
+
+
