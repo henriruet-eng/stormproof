@@ -1,5 +1,5 @@
 # ======================================================================
-# DALIO+ 2025 ULTIMATE — Version Streamlit ULTRA-ROBUSTE
+# DALIO+ 2025 ULTIMATE — Version Streamlit CORRIGÉE (index fix)
 # ======================================================================
 
 import streamlit as st
@@ -33,20 +33,17 @@ with st.spinner('📥 Téléchargement des données historiques...'):
     try:
         data_list = []
         
-        # Télécharger chaque ticker individuellement (méthode robuste)
+        # Télécharger chaque ticker individuellement
         for ticker in tickers:
-            st.write(f"Téléchargement de {ticker}...")
             data = yf.download(ticker, start=start, end=end, progress=False)
             
-            # Gestion robuste de la structure des données
+            # Gestion robuste de la structure
             if isinstance(data.columns, pd.MultiIndex):
-                # Si multi-index, prendre la colonne 'Adj Close'
                 if 'Adj Close' in data.columns.get_level_values(0):
                     series = data['Adj Close'].iloc[:, 0] if len(data['Adj Close'].shape) > 1 else data['Adj Close']
                 else:
                     series = data['Close'].iloc[:, 0] if len(data['Close'].shape) > 1 else data['Close']
             else:
-                # Si simple index
                 if 'Adj Close' in data.columns:
                     series = data['Adj Close']
                 else:
@@ -56,7 +53,6 @@ with st.spinner('📥 Téléchargement des données historiques...'):
             data_list.append(series)
         
         # VIX
-        st.write("Téléchargement de VIX...")
         vix_data = yf.download('^VIX', start=start, end=end, progress=False)
         
         if isinstance(vix_data.columns, pd.MultiIndex):
@@ -73,14 +69,13 @@ with st.spinner('📥 Téléchargement des données historiques...'):
         vix_series.name = '^VIX'
         data_list.append(vix_series)
         
-        # Combiner et resampler mensuellement
+        # Combiner et resampler
         prices = pd.concat(data_list, axis=1).resample('M').last()
         df = prices.copy()
         
-        # Télécharger données FRED réelles
+        # Données FRED
         if FRED_AVAILABLE:
             try:
-                st.write("Téléchargement données FRED...")
                 cpi = pdr.DataReader('CPIAUCSL', 'fred', start, end).resample('M').last()
                 fedfunds = pdr.DataReader('FEDFUNDS', 'fred', start, end).resample('M').last()
                 unrate = pdr.DataReader('UNRATE', 'fred', start, end).resample('M').last()
@@ -91,7 +86,7 @@ with st.spinner('📥 Téléchargement des données historiques...'):
                 
                 st.success("✅ Données FRED réelles chargées !")
             except Exception as e:
-                st.warning(f"⚠️ FRED indisponible ({str(e)[:50]}...). Utilisation données simulées.")
+                st.warning(f"⚠️ FRED indisponible. Utilisation données simulées.")
                 FRED_AVAILABLE = False
         
         # Fallback données simulées
@@ -102,9 +97,13 @@ with st.spinner('📥 Téléchargement des données historiques...'):
         
         # Calcul inflation YoY
         df['CPI_YoY'] = df['CPIAUCSL'].pct_change(12) * 100
-        df = df.dropna()
         
-        returns = df[tickers].pct_change().dropna()
+        # CORRECTION CRITIQUE : Calculer returns AVANT dropna
+        returns = df[tickers].pct_change()
+        
+        # Maintenant on peut dropper les NaN en SYNCHRONISANT df et returns
+        df = df.dropna()
+        returns = returns.loc[df.index]  # ← SYNCHRONISATION CRITIQUE
         
         st.success(f"✅ **{len(df)} mois** chargés ({df.index[0].strftime('%Y-%m')} → {df.index[-1].strftime('%Y-%m')})")
         
@@ -192,22 +191,31 @@ with st.spinner('⚙️ Simulation en cours...'):
     
     progress_bar = st.progress(0)
     
-    for i in range(1, len(df)):
-        if i % 10 == 0:
-            progress_bar.progress(i / len(df))
+    # CORRECTION : Utiliser l'index partagé de df et returns
+    for idx, date in enumerate(df.index):
+        if idx == 0:  # Skip premier mois (pas de return)
+            continue
+            
+        if idx % 10 == 0:
+            progress_bar.progress(idx / len(df))
         
-        window = returns.iloc[max(0, i-36):i]
+        # Fenêtre glissante (36 mois max)
+        window_start = max(0, idx - 36)
+        window = returns.iloc[window_start:idx]
+        
         if len(window) < 12:
             continue
         
-        season = df['Saison_Dalio'].iloc[i]
-        cpi_change = df['CPI_YoY'].iloc[i] - df['CPI_YoY'].iloc[i-1] if i > 0 else 0
-        fed_change = df['FEDFUNDS'].iloc[i] - df['FEDFUNDS'].iloc[i-1] if i > 0 else 0
+        season = df['Saison_Dalio'].iloc[idx]
+        cpi_change = df['CPI_YoY'].iloc[idx] - df['CPI_YoY'].iloc[idx-1] if idx > 0 else 0
+        fed_change = df['FEDFUNDS'].iloc[idx] - df['FEDFUNDS'].iloc[idx-1] if idx > 0 else 0
         causal_adj = pearl_causal_adjustment(season, cpi_change, fed_change)
         
-        vix = df['^VIX'].iloc[i]
-        tension = df['Tension_Élastique'].iloc[i]
-        recent_30d = returns.iloc[max(0, i-30):i].mean().values
+        vix = df['^VIX'].iloc[idx]
+        tension = df['Tension_Élastique'].iloc[idx]
+        
+        recent_30d_start = max(0, idx - 30)
+        recent_30d = returns.iloc[recent_30d_start:idx].mean().values
         vix_w, risk_mult = vix_aggressive_buy(vix, weights, recent_30d)
         
         cov = window.cov() * 252 + np.eye(4) * 1e-6
@@ -228,8 +236,9 @@ with st.spinner('⚙️ Simulation en cours...'):
         final_w *= double_loop_feedback(cumulative_dd)
         final_w /= final_w.sum()
         
-        ret_plus = np.dot(final_w, returns.iloc[i])
-        ret_classic = np.dot([0.30, 0.55, 0.075, 0.075], returns.iloc[i])
+        # CORRECTION : Utiliser .values pour extraire les valeurs
+        ret_plus = np.dot(final_w, returns.iloc[idx].values)
+        ret_classic = np.dot([0.30, 0.55, 0.075, 0.075], returns.iloc[idx].values)
         
         capital_plus.append(capital_plus[-1] * (1 + ret_plus))
         capital_classic.append(capital_classic[-1] * (1 + ret_classic))
@@ -240,7 +249,7 @@ with st.spinner('⚙️ Simulation en cours...'):
 result = pd.DataFrame({
     "DALIO+ ULTIMATE": capital_plus,
     "All Weather classique": capital_classic
-}, index=returns.index[:len(capital_plus)])
+}, index=df.index[:len(capital_plus)])
 
 final = result["DALIO+ ULTIMATE"].iloc[-1]
 final_classic = result["All Weather classique"].iloc[-1]
