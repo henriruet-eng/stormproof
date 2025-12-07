@@ -791,6 +791,5 @@ st.markdown('<p class="methodology-text">📋 Proprietary methodology (Dalio 4 S
 
 st.markdown('<p class="footer-contact">Contact: henri8@gmail.com • +33 6 63 54 7000</p>', unsafe_allow_html=True)
 
----
 
 
