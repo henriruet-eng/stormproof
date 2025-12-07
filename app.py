@@ -1,4 +1,4 @@
-st.title("🌪️ STORMPROOF 2025")
+st.title("STORMPROOF 2025")
 st.markdown("**The algorithm that outperformed Ray Dalio's All Weather by +105 % over 25 years**")
 st.image("https://i.imgur.com/ton-graphique.png")  # Une belle courbe que je te fais
 st.metric("Outperformance vs All Weather", "+105 %")
