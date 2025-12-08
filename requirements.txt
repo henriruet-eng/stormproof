@@ -1,6 +1,26 @@
-streamlit>=1.28.0
-numpy>=1.24.0
-pandas>=2.0.0
-yfinance>=0.2.30
-matplotlib>=3.7.0
-pandas-datareader>=0.10.0
+# ===================================================================
+# requirements.txt – STORMPROOF 2.0 (Version finale – Décembre 2025)
+# Testé et validé sur Python 3.11 & 3.12
+# ===================================================================
+
+streamlit==1.38.0
+numpy==2.1.2
+pandas==2.2.3
+yfinance==0.2.44
+matplotlib==3.9.2
+pandas-datareader==0.10.0
+
+# Stabilité & compatibilité (fortement recommandés)
+python-dateutil==2.9.0.post0
+pytz==2024.2
+requests==2.32.3
+certifi==2024.8.30
+urllib3==2.2.3
+idna==3.8
+
+# Cache & déploiement Streamlit Cloud / Railway (obligatoires pour éviter les bugs)
+watchdog==4.0.2
+cachetools==5.5.0
+
+# Optionnel mais très utile si tu veux des graphs interactifs plus tard
+plotly==5.24.1
