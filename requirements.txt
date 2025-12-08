@@ -1,15 +1,4 @@
-# ===================================================================
-# requirements.txt – STORMPROOF 2.0 (December 2025)
-# Local data version - No external API dependencies
-# ===================================================================
-# streamlit
-# pandas
-# numpy
-# matplotlib
-# plotly (optionnel)
-
-st.markdown("### requirements.txt à uploader")
-st.code("""streamlit
+streamlit
 pandas
 numpy
-matplotlib""")
+matplotlib
