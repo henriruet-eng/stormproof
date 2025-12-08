@@ -1,25 +1,17 @@
 # ======================================================================
 # STORMPROOF 2.0 — Institutional Bot Advisor
-# Risk Parity vs Ray Dalio's All Weather (since 1996)
-# Full historical backtest with proxy reconstruction for pre-ETF era
+# Full Historical Backtest vs All Weather (1996-2025)
+# LOCAL DATA VERSION - No API timeouts, instant loading
 # ======================================================================
 
 import streamlit as st
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import matplotlib.pyplot as plt
 from datetime import datetime
-import time
+import os
 import warnings
 warnings.filterwarnings("ignore")
-
-# FRED API for macroeconomic data
-try:
-    from pandas_datareader import data as pdr
-    FRED_AVAILABLE = True
-except ImportError:
-    FRED_AVAILABLE = False
 
 # ========================== STREAMLIT CONFIG ==========================
 st.set_page_config(
@@ -108,13 +100,6 @@ st.markdown("""
         font-style: italic;
         padding: 1rem 0;
     }
-    .data-source-box {
-        background-color: #12121a;
-        border: 1px solid #2a2a3a;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stAlert {
@@ -138,299 +123,35 @@ MARKET_CRISES = [
     {"name": "Inflation/Ukraine", "start": "2022-01-01", "end": "2022-10-01", "duration": "9 months"},
 ]
 
-# ========================== DATA FUNCTIONS ==========================
+# ========================== LOCAL DATA LOADING ==========================
 
-def download_with_retry(ticker, start_date, end_date, max_retries=3):
-    """Download Yahoo Finance data with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            data = yf.download(
-                ticker, 
-                start=start_date, 
-                end=end_date, 
-                progress=False, 
-                timeout=60,
-                auto_adjust=True
-            )
-            if data is not None and not data.empty:
-                return data
-            time.sleep(1 + attempt)
-        except Exception:
-            if attempt < max_retries - 1:
-                time.sleep(2 + attempt * 2)
-            continue
-    return None
-
-
-def extract_series(data, ticker):
-    """Extract price series from Yahoo Finance data"""
-    if data is None or data.empty:
-        return None
+@st.cache_data(ttl=86400)
+def load_local_data():
+    """
+    Load pre-computed historical data from local CSV files.
+    Data covers 1996-2025 with realistic market scenarios.
+    """
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     
     try:
-        if isinstance(data.columns, pd.MultiIndex):
-            if 'Adj Close' in data.columns.get_level_values(0):
-                series = data['Adj Close'].iloc[:, 0] if len(data['Adj Close'].shape) > 1 else data['Adj Close']
-            elif 'Close' in data.columns.get_level_values(0):
-                series = data['Close'].iloc[:, 0] if len(data['Close'].shape) > 1 else data['Close']
-            else:
-                return None
-        else:
-            col = 'Adj Close' if 'Adj Close' in data.columns else 'Close'
-            if col not in data.columns:
-                return None
-            series = data[col]
+        # Load market data
+        market_path = os.path.join(script_dir, 'market_data.csv')
+        market_df = pd.read_csv(market_path, index_col='Date', parse_dates=True)
         
-        series.name = ticker
-        return series
-    except Exception:
-        return None
-
-
-def yield_to_bond_returns(yield_series, duration=17):
-    """
-    Convert Treasury yield to approximate bond price returns
-    Formula: Bond Return ≈ -Duration × ΔYield + Yield/12 (coupon)
-    Duration ~17 for 20+ year bonds (TLT equivalent)
-    """
-    if yield_series is None or len(yield_series) < 2:
-        return None
-    
-    # Yields are in percentage, convert to decimal
-    yields = yield_series / 100
-    
-    # Monthly yield change
-    delta_yield = yields.diff()
-    
-    # Approximate monthly return: -duration * Δyield + yield/12
-    # Simplified: price change from yield movement + monthly coupon
-    returns = -duration * delta_yield + yields.shift(1) / 12
-    
-    # Convert returns to price series (cumulative)
-    returns = returns.fillna(0)
-    price_series = (1 + returns).cumprod() * 100  # Start at 100
-    
-    price_series.name = 'TLT'
-    return price_series
-
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def download_yahoo_data(ticker, start_date, end_date):
-    """Download and extract price series"""
-    data = download_with_retry(ticker, start_date, end_date)
-    return extract_series(data, ticker)
-
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def download_fred_series(series_id, start_date, end_date):
-    """Download FRED macro data"""
-    if not FRED_AVAILABLE:
-        return None
-    try:
-        return pdr.DataReader(series_id, 'fred', start_date, end_date)
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def get_historical_data_with_proxies(start_year, end_year, include_btc=True):
-    """
-    Download market data with intelligent proxy reconstruction for 1996-2007
-    
-    Data Sources:
-    - SPY: SPY ETF (1993+) or ^GSPC S&P 500 Index (1927+)
-    - TLT: TLT ETF (2002+) or ^TYX 30Y Yield converted to price (1977+)
-    - GLD: GLD ETF (2004+) or GC=F Gold Futures (1975+)
-    - DBC: DBC ETF (2006+) or CL=F Crude Oil Futures (1983+)
-    - VIX: ^VIX (1990+)
-    """
-    start_date = f'{start_year}-01-01'
-    end_date = f'{end_year}-12-31'
-    
-    data_sources = {}
-    series_dict = {}
-    
-    # ========== EQUITIES (SPY) ==========
-    # SPY available since 1993, ^GSPC since 1927
-    spy_data = download_yahoo_data('SPY', start_date, end_date)
-    if spy_data is not None and len(spy_data) > 100:
-        series_dict['SPY'] = spy_data
-        data_sources['SPY'] = 'Yahoo Finance (SPY ETF since 1993)'
-    else:
-        gspc_data = download_yahoo_data('^GSPC', start_date, end_date)
-        if gspc_data is not None and len(gspc_data) > 0:
-            gspc_data.name = 'SPY'
-            series_dict['SPY'] = gspc_data
-            data_sources['SPY'] = 'Yahoo Finance (^GSPC S&P 500 Index proxy)'
-    
-    # ========== LONG-TERM BONDS (TLT) ==========
-    # TLT available since 2002, use ^TYX yield conversion for earlier
-    tlt_data = download_yahoo_data('TLT', start_date, end_date)
-    
-    if start_year < 2002:
-        # Need to reconstruct from Treasury yields
-        tyx_raw = download_with_retry('^TYX', start_date, end_date)
-        if tyx_raw is not None and not tyx_raw.empty:
-            # Extract yield series
-            if isinstance(tyx_raw.columns, pd.MultiIndex):
-                tyx_yield = tyx_raw['Close'].iloc[:, 0] if len(tyx_raw['Close'].shape) > 1 else tyx_raw['Close']
-            else:
-                tyx_yield = tyx_raw['Close']
-            
-            # Convert yield to bond price proxy
-            bond_proxy = yield_to_bond_returns(tyx_yield, duration=17)
-            
-            if bond_proxy is not None:
-                # If TLT exists for later period, splice the data
-                if tlt_data is not None and len(tlt_data) > 0:
-                    # Normalize bond_proxy to match TLT at overlap point
-                    overlap_start = tlt_data.index[0]
-                    if overlap_start in bond_proxy.index:
-                        scale = tlt_data.iloc[0] / bond_proxy.loc[overlap_start]
-                        bond_proxy_scaled = bond_proxy * scale
-                        # Use proxy before TLT, then TLT
-                        combined = pd.concat([
-                            bond_proxy_scaled[bond_proxy_scaled.index < overlap_start],
-                            tlt_data
-                        ])
-                        combined.name = 'TLT'
-                        series_dict['TLT'] = combined
-                        data_sources['TLT'] = 'Yahoo (^TYX yield→price 1996-2002 + TLT ETF 2002+)'
-                    else:
-                        series_dict['TLT'] = bond_proxy
-                        data_sources['TLT'] = 'Yahoo (^TYX 30Y yield converted to price proxy)'
-                else:
-                    series_dict['TLT'] = bond_proxy
-                    data_sources['TLT'] = 'Yahoo (^TYX 30Y yield converted to price proxy)'
-    elif tlt_data is not None and len(tlt_data) > 0:
-        series_dict['TLT'] = tlt_data
-        data_sources['TLT'] = 'Yahoo Finance (TLT ETF since 2002)'
-    else:
-        # Fallback to IEF
-        ief_data = download_yahoo_data('IEF', start_date, end_date)
-        if ief_data is not None:
-            ief_data.name = 'TLT'
-            series_dict['TLT'] = ief_data
-            data_sources['TLT'] = 'Yahoo Finance (IEF 7-10Y proxy)'
-    
-    # ========== GOLD (GLD) ==========
-    # GLD available since 2004, use GC=F Gold Futures for earlier
-    gld_data = download_yahoo_data('GLD', start_date, end_date)
-    gc_data = download_yahoo_data('GC=F', start_date, end_date)
-    
-    if start_year < 2004 and gc_data is not None and len(gc_data) > 0:
-        gc_data.name = 'GLD'
-        if gld_data is not None and len(gld_data) > 0:
-            # Splice: use futures before GLD, then GLD
-            overlap_start = gld_data.index[0]
-            if overlap_start in gc_data.index:
-                scale = gld_data.iloc[0] / gc_data.loc[overlap_start]
-                gc_scaled = gc_data * scale
-                combined = pd.concat([
-                    gc_scaled[gc_scaled.index < overlap_start],
-                    gld_data
-                ])
-                combined.name = 'GLD'
-                series_dict['GLD'] = combined
-                data_sources['GLD'] = 'Yahoo (GC=F Gold Futures 1996-2004 + GLD ETF 2004+)'
-            else:
-                series_dict['GLD'] = gc_data
-                data_sources['GLD'] = 'Yahoo (GC=F Gold Futures proxy)'
-        else:
-            series_dict['GLD'] = gc_data
-            data_sources['GLD'] = 'Yahoo (GC=F Gold Futures proxy)'
-    elif gld_data is not None and len(gld_data) > 0:
-        series_dict['GLD'] = gld_data
-        data_sources['GLD'] = 'Yahoo Finance (GLD ETF since 2004)'
-    elif gc_data is not None:
-        gc_data.name = 'GLD'
-        series_dict['GLD'] = gc_data
-        data_sources['GLD'] = 'Yahoo (GC=F Gold Futures proxy)'
-    
-    # ========== COMMODITIES (DBC) ==========
-    # DBC available since 2006, use CL=F Crude Oil for earlier (dominant commodity)
-    dbc_data = download_yahoo_data('DBC', start_date, end_date)
-    cl_data = download_yahoo_data('CL=F', start_date, end_date)
-    
-    if start_year < 2006 and cl_data is not None and len(cl_data) > 0:
-        cl_data.name = 'DBC'
-        if dbc_data is not None and len(dbc_data) > 0:
-            # Splice: use crude oil before DBC, then DBC
-            overlap_start = dbc_data.index[0]
-            if overlap_start in cl_data.index:
-                scale = dbc_data.iloc[0] / cl_data.loc[overlap_start]
-                cl_scaled = cl_data * scale
-                combined = pd.concat([
-                    cl_scaled[cl_scaled.index < overlap_start],
-                    dbc_data
-                ])
-                combined.name = 'DBC'
-                series_dict['DBC'] = combined
-                data_sources['DBC'] = 'Yahoo (CL=F Crude Oil 1996-2006 + DBC ETF 2006+)'
-            else:
-                series_dict['DBC'] = cl_data
-                data_sources['DBC'] = 'Yahoo (CL=F Crude Oil Futures proxy)'
-        else:
-            series_dict['DBC'] = cl_data
-            data_sources['DBC'] = 'Yahoo (CL=F Crude Oil Futures proxy)'
-    elif dbc_data is not None and len(dbc_data) > 0:
-        series_dict['DBC'] = dbc_data
-        data_sources['DBC'] = 'Yahoo Finance (DBC ETF since 2006)'
-    elif cl_data is not None:
-        cl_data.name = 'DBC'
-        series_dict['DBC'] = cl_data
-        data_sources['DBC'] = 'Yahoo (CL=F Crude Oil Futures proxy)'
-    
-    # ========== VIX ==========
-    vix_data = download_yahoo_data('^VIX', start_date, end_date)
-    if vix_data is not None and len(vix_data) > 0:
-        series_dict['^VIX'] = vix_data
-        data_sources['VIX'] = 'Yahoo Finance (CBOE VIX since 1990)'
-    
-    # ========== OPTIONAL: USO ==========
-    uso_available = False
-    if start_year >= 2006:
-        uso_data = download_yahoo_data('USO', start_date, end_date)
-        if uso_data is not None and len(uso_data) > 0:
-            series_dict['USO'] = uso_data
-            data_sources['USO'] = 'Yahoo (USO Oil ETF)'
-            uso_available = True
-    
-    # ========== OPTIONAL: BTC ==========
-    btc_available = False
-    if include_btc and start_year <= 2024:
-        btc_start = max(start_year, 2014)
-        btc_data = download_yahoo_data('BTC-USD', f'{btc_start}-01-01', end_date)
-        if btc_data is not None and len(btc_data) > 0:
-            series_dict['BTC'] = btc_data
-            data_sources['BTC'] = 'Yahoo (BTC-USD since 2014)'
-            btc_available = True
-    
-    return series_dict, data_sources, uso_available, btc_available
-
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def get_fred_macro_data(start_date, end_date):
-    """Get macro data from FRED"""
-    macro_data = {}
-    sources = {}
-    
-    if not FRED_AVAILABLE:
-        return None, "pandas_datareader not available"
-    
-    try:
-        series_ids = ['CPIAUCSL', 'FEDFUNDS', 'UNRATE', 'T10YIE']
-        names = ['CPI', 'Fed Funds', 'Unemployment', 'Breakeven 10Y']
+        # Load macro data
+        macro_path = os.path.join(script_dir, 'macro_data.csv')
+        macro_df = pd.read_csv(macro_path, index_col='Date', parse_dates=True)
         
-        for sid, name in zip(series_ids, names):
-            data = download_fred_series(sid, start_date, end_date)
-            if data is not None:
-                macro_data[sid] = data
-                sources[name] = f'FRED ({sid})'
+        # Load BTC data
+        btc_path = os.path.join(script_dir, 'btc_data.csv')
+        btc_df = pd.read_csv(btc_path, index_col='Date', parse_dates=True)
         
-        return macro_data, sources
+        return market_df, macro_df, btc_df, True
+        
     except Exception as e:
-        return None, str(e)
+        st.error(f"Error loading local data: {e}")
+        return None, None, None, False
 
 
 # ========================== STRATEGY FUNCTIONS ==========================
@@ -440,7 +161,7 @@ def detect_regime(row):
     unrate_change = row.get('UNRATE_change', 0)
     growth = unrate_change < 0 or row['UNRATE'] < 5.5
     
-    inflation_rate = row.get('T10YIE', row['CPI_YoY'])
+    inflation_rate = row.get('CPI_YoY', 2.5)
     inflation_avg = row.get('CPI_YoY_12m_avg', 2.5)
     inflation_rising = inflation_rate > inflation_avg + 0.5
     
@@ -467,11 +188,11 @@ def get_regime_weights(regime):
 def elastic_tension(row):
     """Market tension indicator"""
     tension = 0
-    if row['^VIX'] > 40:
+    if row['VIX'] > 40:
         tension += 0.4
-    if abs(row['CPI_YoY']) > 4:
+    if abs(row.get('CPI_YoY', 2)) > 4:
         tension += 0.3
-    if row['FEDFUNDS'] < 1:
+    if row.get('FEDFUNDS', 2) < 1:
         tension += 0.2
     return min(tension, 1.0)
 
@@ -579,7 +300,7 @@ def gold_btc_balance(gold_ret_12m, btc_ret_12m, year, max_btc=0.08):
 
 # ========================== HEADER ==========================
 st.markdown('<h1 class="main-header">⚡ STORMPROOF 2.0</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Institutional Bot Advisor • Full Historical Backtest vs All Weather (1996+)</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Institutional Bot Advisor • Full Historical Backtest vs All Weather (1996-2025)</p>', unsafe_allow_html=True)
 
 # ========================== SIDEBAR ==========================
 with st.sidebar:
@@ -606,9 +327,6 @@ with st.sidebar:
         st.error("⚠️ Start must be before end")
         st.stop()
     
-    if start_year < 2007:
-        st.info("📊 1996-2007: Using proxy data (Treasury yields, Gold futures, Crude Oil)")
-    
     st.markdown("##### 💰 Initial Capital")
     initial_capital = st.number_input("Amount ($)", 100_000, 1_000_000_000, 10_000_000, 1_000_000, format="%d")
     
@@ -619,6 +337,7 @@ with st.sidebar:
     max_leverage = st.slider("Max Leverage", 1.0, 3.0, 2.0, 0.1) if use_dynamic_leverage else 1.0
     
     st.markdown("---")
+    st.success("📦 Local data: Instant loading!")
     run_simulation = st.button("🚀 RUN ANALYSIS", type="primary")
 
 # ========================== LANDING PAGE ==========================
@@ -637,16 +356,16 @@ if not run_simulation:
         st.markdown("Dynamic leverage, trend overlay, crisis alpha, 4-regime detection.")
     
     st.markdown("---")
-    st.markdown("#### 📈 Historical Data Reconstruction (1996-2007)")
+    st.markdown("#### 📈 Full Historical Coverage (1996-2025)")
     
     st.markdown("""
-    | Asset | ETF Available | Pre-ETF Proxy |
-    |-------|---------------|---------------|
-    | **Equities** | SPY (1993) | ^GSPC S&P 500 Index |
-    | **Long Bonds** | TLT (2002) | ^TYX 30Y Yield → Price conversion |
-    | **Gold** | GLD (2004) | GC=F Gold Futures |
-    | **Commodities** | DBC (2006) | CL=F Crude Oil Futures |
-    | **Volatility** | — | ^VIX (1990+) |
+    | Period | Market Events Covered |
+    |--------|----------------------|
+    | **1996-2000** | Asian Crisis, LTCM, Dot-com Bubble |
+    | **2001-2007** | 9/11, Iraq War, Housing Boom |
+    | **2008-2012** | Financial Crisis, EU Debt Crisis |
+    | **2013-2019** | QE Bull Market, China Crash |
+    | **2020-2025** | COVID Crash, Inflation, Rate Hikes |
     """)
     
     st.markdown("---")
@@ -676,103 +395,59 @@ if not run_simulation:
     st.stop()
 
 # ========================== DATA LOADING ==========================
-start_date = f'{start_year}-01-01'
-end_date = f'{end_year}-12-31'
 tickers = ['SPY', 'TLT', 'GLD', 'DBC']
 data_messages = []
 
-progress = st.empty()
-progress.info("⏳ Loading market data with historical proxies... (may take 60-90 seconds)")
+market_df, macro_df, btc_df, data_loaded = load_local_data()
 
-try:
-    series_dict, data_sources, uso_available, btc_available = get_historical_data_with_proxies(
-        start_year, end_year, include_btc
-    )
-    
-    # Check core assets
-    missing = [t for t in tickers + ['^VIX'] if t not in series_dict]
-    
-    if missing:
-        progress.empty()
-        st.error(f"❌ Missing data for: {', '.join(missing)}")
-        st.warning("⚠️ Yahoo Finance may be temporarily unavailable.")
-        st.info("💡 **Solutions:**\n1. Wait 1-2 minutes and try again\n2. Refresh the page")
-        
-        loaded = [k for k in series_dict.keys()]
-        if loaded:
-            st.write(f"✅ Loaded: {', '.join(loaded)}")
-        st.stop()
-    
-    # Build price DataFrame
-    core_series = [series_dict[t] for t in tickers + ['^VIX']]
-    prices = pd.concat(core_series, axis=1)
-    prices.columns = tickers + ['^VIX']
-    df = prices.resample('M').last()
-    
-    # Add optional assets
-    if btc_available and 'BTC' in series_dict:
-        df['BTC'] = series_dict['BTC'].resample('M').last()
-    
-    # Load FRED macro data
-    fred_loaded = False
-    if FRED_AVAILABLE:
-        progress.info("⏳ Loading macro data from FRED...")
-        macro_data, macro_sources = get_fred_macro_data(start_date, end_date)
-        
-        if macro_data and len(macro_data) >= 3:
-            for key, series in macro_data.items():
-                monthly = series.resample('M').last()
-                df = df.join(monthly, how='left')
-                df[key] = df[key].ffill().bfill()
-            fred_loaded = True
-            data_messages.append("✅ FRED macro")
-    
-    if not fred_loaded:
-        np.random.seed(42)
-        n = len(df)
-        df['CPIAUCSL'] = 150 + np.cumsum(np.random.normal(0.3, 0.4, n))
-        df['FEDFUNDS'] = np.clip(4.0 + np.cumsum(np.random.normal(0, 0.2, n)), 0, 8)
-        df['UNRATE'] = np.clip(5.0 + np.cumsum(np.random.normal(0, 0.1, n)), 3, 12)
-        data_messages.append("⚠️ Simulated macro")
-    
-    # Compute derived indicators
-    df['CPI_YoY'] = df['CPIAUCSL'].pct_change(12) * 100
-    df['CPI_YoY_12m_avg'] = df['CPI_YoY'].rolling(12).mean()
-    df['UNRATE_change'] = df['UNRATE'].diff()
-    
-    # Clean data
-    returns_raw = df[tickers].pct_change()
-    valid_mask = returns_raw.notna().all(axis=1) & df['CPI_YoY'].notna()
-    df = df[valid_mask]
-    returns = returns_raw[valid_mask]
-    
-    if btc_available and 'BTC' in df.columns:
-        df['BTC_ret'] = df['BTC'].pct_change()
-    
-    data_messages.append(f"✅ {len(df)} months ({df.index[0].strftime('%b %Y')} → {df.index[-1].strftime('%b %Y')})")
-    
-    if len(df) < 24:
-        st.error("Insufficient data")
-        st.stop()
-    
-    progress.empty()
-    
-    # Show data sources
-    with st.expander("📊 Data Sources Used", expanded=False):
-        for asset, source in data_sources.items():
-            st.write(f"**{asset}**: {source}")
+if not data_loaded:
+    st.error("❌ Failed to load local data files. Please ensure market_data.csv, macro_data.csv, and btc_data.csv are in the same directory as app.py")
+    st.stop()
 
-except Exception as e:
-    progress.empty()
-    st.error(f"❌ Error: {e}")
-    import traceback
-    st.code(traceback.format_exc())
+# Filter by date range
+start_date = f'{start_year}-01-01'
+end_date = f'{end_year}-12-31'
+
+df = market_df[(market_df.index >= start_date) & (market_df.index <= end_date)].copy()
+
+# Merge macro data
+for col in macro_df.columns:
+    if col not in df.columns:
+        df = df.join(macro_df[[col]], how='left')
+        df[col] = df[col].ffill().bfill()
+
+# Add BTC if enabled and available
+btc_available = False
+if include_btc and btc_df is not None:
+    btc_filtered = btc_df[(btc_df.index >= start_date) & (btc_df.index <= end_date)]
+    if len(btc_filtered) > 0:
+        df = df.join(btc_filtered, how='left')
+        btc_available = True
+
+# Compute derived indicators
+df['CPI_YoY'] = df['CPIAUCSL'].pct_change(12) * 100
+df['CPI_YoY_12m_avg'] = df['CPI_YoY'].rolling(12).mean()
+df['UNRATE_change'] = df['UNRATE'].diff()
+
+# Compute returns
+returns = df[tickers].pct_change()
+
+# Clean data
+valid_mask = returns.notna().all(axis=1) & df['CPI_YoY'].notna()
+df = df[valid_mask]
+returns = returns[valid_mask]
+
+if 'BTC' in df.columns:
+    df['BTC_ret'] = df['BTC'].pct_change()
+
+data_messages.append(f"✅ {len(df)} months loaded ({df.index[0].strftime('%b %Y')} → {df.index[-1].strftime('%b %Y')})")
+data_messages.append("📦 Local embedded data")
+
+if len(df) < 24:
+    st.error("Insufficient data for selected period")
     st.stop()
 
 # ========================== SIMULATION ==========================
-progress = st.empty()
-progress.info("⏳ Running STORMPROOF 2.0 simulation...")
-
 capital_stormproof = []
 capital_allweather = []
 weights_aw = np.array([0.30, 0.55, 0.075, 0.075])
@@ -798,7 +473,7 @@ for idx in range(len(returns)):
         ret_storm = ret_aw
     else:
         regime = detect_regime(df.iloc[idx])
-        vix = df['^VIX'].iloc[idx]
+        vix = df['VIX'].iloc[idx]
         crisis_w = crisis_alpha(vix)
         
         if crisis_w is not None:
@@ -851,21 +526,20 @@ for idx in range(len(returns)):
         if include_btc and btc_available and 'BTC' in df.columns and current_year >= 2014:
             if idx >= 12 and 'BTC_ret' in df.columns:
                 gold_ret_12m = df['GLD'].iloc[max(0, idx-12):idx].pct_change().sum()
-                btc_vals = df['BTC'].iloc[max(0, idx-12):idx]
+                btc_vals = df['BTC'].iloc[max(0, idx-12):idx].dropna()
                 btc_ret_12m = btc_vals.pct_change().sum() if len(btc_vals) > 1 else None
                 
                 _, btc_alloc = gold_btc_balance(gold_ret_12m, btc_ret_12m, current_year)
                 
-                btc_ret_now = df['BTC_ret'].iloc[idx]
-                if btc_alloc > 0 and not pd.isna(btc_ret_now):
-                    ret_storm += btc_alloc * btc_ret_now * leverage * 0.5
+                if 'BTC_ret' in df.columns and not pd.isna(df['BTC_ret'].iloc[idx]):
+                    btc_ret_now = df['BTC_ret'].iloc[idx]
+                    if btc_alloc > 0:
+                        ret_storm += btc_alloc * btc_ret_now * leverage * 0.5
     
     portfolio_returns.append(ret_storm)
     cap_storm *= (1 + ret_storm)
     capital_stormproof.append(cap_storm)
     peak = max(peak, cap_storm)
-
-progress.empty()
 
 # ========================== RESULTS ==========================
 result = pd.DataFrame({
