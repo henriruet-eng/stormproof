@@ -171,15 +171,4 @@ col2.metric("STORMPROOF 2.0 - Max Drawdown", f"{dd_storm:.1f}%")
 
 st.success("Drawdown All Weather CORRIGÉ → -22.9% (valeur historique réelle)")
 
-# ========================== REQUIREMENTS.TXT (à mettre à jour) ==========================
-# streamlit
-# pandas
-# numpy
-# matplotlib
-# plotly (optionnel)
 
-st.markdown("### requirements.txt à uploader")
-st.code("""streamlit
-pandas
-numpy
-matplotlib""")
