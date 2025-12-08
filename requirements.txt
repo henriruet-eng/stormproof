@@ -1,6 +1,6 @@
 # ===================================================================
 # requirements.txt – STORMPROOF 2.0 (December 2025)
-# Tested on Python 3.11+ / Streamlit Cloud
+# Full historical backtest with proxy reconstruction (1996+)
 # ===================================================================
 
 streamlit==1.38.0
@@ -17,6 +17,6 @@ requests==2.32.3
 certifi==2024.8.30
 urllib3==2.2.3
 
-# Cache & deployment (required for Streamlit Cloud)
+# Cache & deployment
 watchdog==4.0.2
 cachetools==5.5.0
