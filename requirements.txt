@@ -1,22 +1,16 @@
 # ===================================================================
 # requirements.txt – STORMPROOF 2.0 (December 2025)
-# Full historical backtest with proxy reconstruction (1996+)
+# Local data version - No external API dependencies
 # ===================================================================
 
 streamlit==1.38.0
 numpy==2.1.2
 pandas==2.2.3
-yfinance==0.2.44
 matplotlib==3.9.2
-pandas-datareader==0.10.0
 
-# Stability & compatibility
+# Stability
 python-dateutil==2.9.0.post0
 pytz==2024.2
-requests==2.32.3
-certifi==2024.8.30
-urllib3==2.2.3
 
 # Cache & deployment
 watchdog==4.0.2
-cachetools==5.5.0
