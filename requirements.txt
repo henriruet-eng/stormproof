@@ -1,5 +1,5 @@
 # ===================================================================
-# requirements.txt – STORMPROOF 2.0 (Version finale – Décembre 2025)
+# requirements.txt – STORMPROOF (Version finale – Décembre 2025)
 # Testé et validé sur Python 3.11 & 3.12
 # ===================================================================
 
